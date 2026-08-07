@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data lake runtime data
+data_lake/bronze/*
+data_lake/silver/*
+data_lake/quarantine/*
+data_lake/checkpoints/*
+
+# Keep directories in Git
+!data_lake/bronze/.gitkeep
+!data_lake/silver/.gitkeep
+!data_lake/quarantine/.gitkeep
+!data_lake/checkpoints/.gitkeep
+
+# Airflow runtime
+airflow/logs/
+airflow/airflow.db
+
+# dbt generated files
+warehouse/dbt/target/
+warehouse/dbt/logs/
+warehouse/dbt/dbt_packages/
