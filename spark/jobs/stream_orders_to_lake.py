@@ -2,6 +2,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
     col,
     current_timestamp,
+    date_format,
     from_json,
     to_date,
     to_timestamp,
@@ -56,7 +57,7 @@ def read_kafka_stream(spark: SparkSession) -> DataFrame:
             KAFKA_BOOTSTRAP_SERVERS,
         )
         .option("subscribe", TOPIC_NAME)
-        .option("startingOffsets", "latest")
+        .option("startingOffsets", "earliest")
         .load()
     )
 
@@ -149,6 +150,14 @@ def build_silver(validated_df: DataFrame) -> DataFrame:
             "event_date",
             to_date("event_timestamp"),
         )
+        .withColumn(
+            "ingestion_date",
+            to_date("ingested_at"),
+        )
+        .withColumn(
+            "ingestion_hour",
+            date_format("ingested_at", "HH"),
+        )
         .select(
             "event_id",
             "event_type",
@@ -168,6 +177,8 @@ def build_silver(validated_df: DataFrame) -> DataFrame:
             "offset",
             "kafka_timestamp",
             "ingested_at",
+            "ingestion_date",
+            "ingestion_hour",
         )
     )
 
@@ -212,7 +223,10 @@ def main() -> None:
     silver_query = (
         silver_df.writeStream.format("parquet")
         .outputMode("append")
-        .partitionBy("event_date")
+        .partitionBy(
+            "ingestion_date",
+            "ingestion_hour",
+        )
         .option(
             "checkpointLocation",
             SILVER_CHECKPOINT,
