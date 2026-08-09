@@ -89,6 +89,7 @@ services:
 
     volumes:
       - ./spark:/opt/retailpulse/spark
+      - ./data_lake:/opt/retailpulse/data_lake
 
 
   spark-worker:
@@ -105,7 +106,7 @@ services:
 
     volumes:
       - ./spark:/opt/retailpulse/spark
-
+      - ./data_lake:/opt/retailpulse/data_lake
 
 volumes:
   postgres_data:
