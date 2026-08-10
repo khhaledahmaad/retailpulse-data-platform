@@ -38,6 +38,8 @@ airflow/logs/
 airflow/airflow.db
 
 # dbt generated files
-warehouse/dbt/target/
-warehouse/dbt/logs/
-warehouse/dbt/dbt_packages/
+warehouse/dbt/retailpulse/target/
+warehouse/dbt/retailpulse/logs/
+warehouse/dbt/retailpulse/dbt_packages/
+warehouse/dbt/retailpulse/package-lock.yml
+warehouse/dbt/retailpulse/profiles.yml

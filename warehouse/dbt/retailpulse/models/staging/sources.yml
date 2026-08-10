@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: orders
+        description: Raw validated orders loaded from Silver Parquet.
+
+        columns:
+          - name: event_id
+            tests:
+              - not_null
+              - unique
+
+          - name: order_id
+            tests:
+              - not_null
+
+          - name: product_id
+            tests:
+              - not_null
+
+          - name: quantity
+            tests:
+              - not_null
+
+          - name: order_value
+            tests:
+              - not_null

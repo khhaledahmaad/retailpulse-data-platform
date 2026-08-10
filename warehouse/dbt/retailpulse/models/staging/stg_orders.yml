@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: Clean staging representation of raw retail order events.
+
+    columns:
+      - name: event_id
+        tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        tests:
+          - not_null
+
+      - name: event_type
+        tests:
+          - accepted_values:
+              values:
+                - order_created
+
+      - name: currency
+        tests:
+          - accepted_values:
+              values:
+                - GBP
+
+      - name: quantity
+        tests:
+          - not_null
+
+      - name: order_value
+        tests:
+          - not_null

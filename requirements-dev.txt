@@ -3,3 +3,4 @@ ruff
 kafka-python
 pyarrow
 psycopg[binary]
+dbt-postgres
