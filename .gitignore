@@ -36,10 +36,11 @@ data_lake/checkpoints/*
 # Airflow runtime
 airflow/logs/
 airflow/airflow.db
+airflow/config/airflow.cfg
 
 # dbt generated files
 warehouse/dbt/retailpulse/target/
 warehouse/dbt/retailpulse/logs/
 warehouse/dbt/retailpulse/dbt_packages/
 warehouse/dbt/retailpulse/package-lock.yml
-warehouse/dbt/retailpulse/profiles.yml
+warehouse/dbt/retailpulse/profiles.ymlwarehouse/dbt/retailpulse/.user.yml

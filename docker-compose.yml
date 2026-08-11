@@ -1,3 +1,43 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+
+    # Airflow 3 task processes must reach the API server over the Docker network.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+
+    # Shared by Scheduler and API Server for internal JWT signing
+    AIRFLOW__API_AUTH__JWT_SECRET: retailpulse-airflow-jwt-secret-2026-local-development-key-change-me-0123456789abcdef
+
+    # Simple Auth Manager (Airflow 3 default) for local development.
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: airflow:admin
+
+    # RetailPulse warehouse connection used by the loader/tasks.
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: retailpulse
+    POSTGRES_USER: retailpulse
+    POSTGRES_PASSWORD: retailpulse
+
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./warehouse:/opt/retailpulse/warehouse
+    - ./data_lake:/opt/retailpulse/data_lake
+
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+
 services:
 
   postgres:
@@ -36,27 +76,16 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-
       KAFKA_LISTENERS: EXTERNAL://:9092,INTERNAL://:29092,CONTROLLER://:9093
-
       KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:29092
-
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
-
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
       KAFKA_NUM_PARTITIONS: 3
 
 
@@ -108,5 +137,84 @@ services:
       - ./spark:/opt/retailpulse/spark
       - ./data_lake:/opt/retailpulse/data_lake
 
+
+  airflow-db:
+    image: postgres:17
+    container_name: retailpulse-airflow-db
+
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U airflow -d airflow"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: retailpulse-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+    restart: "no"
+
+
+  airflow-api-server:
+    <<: *airflow-common
+    container_name: retailpulse-airflow-api-server
+    command: api-server
+
+    ports:
+      - "8083:8080"
+
+    restart: unless-stopped
+
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: retailpulse-airflow-scheduler
+    command: scheduler
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      airflow-api-server:
+        condition: service_started
+
+    restart: unless-stopped
+
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: retailpulse-airflow-dag-processor
+    command: dag-processor
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      airflow-api-server:
+        condition: service_started
+
+    restart: unless-stopped
+
+
 volumes:
   postgres_data:
+  airflow_db_data:
