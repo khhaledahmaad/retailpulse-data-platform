@@ -2,5 +2,6 @@ pytest
 ruff
 kafka-python
 pyarrow
+pandas
 psycopg[binary]
 dbt-postgres

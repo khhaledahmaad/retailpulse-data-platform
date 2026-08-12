@@ -563,3 +563,88 @@ dbt documentation and lineage
 ```
 
 **Session 5 status: Complete**
+
+---
+
+## Final Loader Regression and Counting Clarification — 12 August 2026
+
+The incremental loader was tested with multiple Spark streaming runs occurring before a warehouse load.
+
+Example validated behaviour:
+
+```text
+Producer / Spark batch 1
+→ new Silver files
+
+Producer / Spark batch 2
+→ more new Silver files
+
+No loader between batches
+        ↓
+single loader execution
+        ↓
+discovers every eligible unregistered Silver file
+        ↓
+loads the accumulated backlog
+```
+
+This confirms that loader execution is independent of Spark-run boundaries. It works from persisted Silver files plus control state, not from an assumption of one Spark run per warehouse load.
+
+### Watermark-Hour Behaviour
+
+The loader deliberately includes the current watermark hour again:
+
+```text
+partition < watermark
+→ skip
+
+partition == watermark
+→ scan again
+```
+
+Then:
+
+```text
+control.loaded_files
+→ skips files already processed
+→ allows later files written into the same ingestion hour to be loaded
+```
+
+This is important for micro-batch streaming because multiple new Parquet files can arrive in the same hour after an earlier loader run.
+
+### `Rows processed` vs `Rows inserted`
+
+Current `load_orders.py` returns the number of rows read from each new Parquet file and reports the accumulated value as:
+
+```text
+Rows processed
+```
+
+The PostgreSQL insert also uses:
+
+```sql
+ON CONFLICT (event_id) DO NOTHING
+```
+
+Therefore, in the general case:
+
+```text
+rows processed
+may be greater than
+rows actually inserted
+```
+
+if duplicate `event_id` values are present.
+
+For the current RetailPulse producer/regression data, `event_id` values are unique, so processed rows and inserted rows matched during the clean tests.
+
+`control.loaded_files.row_count` currently records the file row count / rows processed, not a separately measured PostgreSQL insert count.
+
+A future observability enhancement can expose both:
+
+```text
+rows_processed
+rows_inserted
+```
+
+without changing the loader's current idempotency model.

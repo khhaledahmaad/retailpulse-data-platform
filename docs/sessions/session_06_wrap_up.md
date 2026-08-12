@@ -456,3 +456,117 @@ operational logging
 Airflow will connect the separate components already built into one observable downstream workflow.
 
 **Session 6 status: Complete**
+
+---
+
+## Final dbt Compatibility and Dual-Environment Fixes — 12 August 2026
+
+Later Airflow integration exposed two environment-specific dbt requirements.
+
+### 1. Dual dbt Targets
+
+Local Windows execution must connect through:
+
+```text
+host: localhost
+```
+
+Airflow runs inside Docker and must connect through:
+
+```text
+host: postgres
+```
+
+The final profile therefore uses two targets:
+
+```yaml
+retailpulse:
+  target: dev
+
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      user: retailpulse
+      password: retailpulse
+      port: 5432
+      dbname: retailpulse
+      schema: analytics
+      threads: 4
+
+    airflow:
+      type: postgres
+      host: postgres
+      user: retailpulse
+      password: retailpulse
+      port: 5432
+      dbname: retailpulse
+      schema: analytics
+      threads: 4
+```
+
+Local commands:
+
+```cmd
+dbt debug --target dev
+dbt build --no-partial-parse --target dev
+```
+
+Intentional local rebuild:
+
+```cmd
+dbt build --full-refresh --no-partial-parse --target dev
+```
+
+Airflow uses:
+
+```text
+dbt build --target airflow --profiles-dir /opt/retailpulse/warehouse/dbt/retailpulse
+```
+
+### 2. dbt Parser Compatibility
+
+With the installed local versions:
+
+```text
+dbt-core 1.12.0
+dbt-postgres 1.11.0
+```
+
+partial parsing produced macro-cache `KeyError` failures.
+
+The working command uses:
+
+```text
+--no-partial-parse
+```
+
+No package downgrade was required.
+
+### 3. Generic-Test Syntax Update
+
+The `accepted_values` tests were updated to the current argument structure:
+
+```yaml
+- accepted_values:
+    arguments:
+      values:
+        - order_created
+```
+
+and similarly for `GBP`.
+
+### 4. Final Incremental Regression
+
+After the initial clean full refresh, later regression runs used normal incremental dbt builds rather than rebuilding `fct_orders` from scratch.
+
+The final analytics lineage reconciled to the current 108-row Kafka/Spark lineage:
+
+```text
+raw.orders
+→ staging
+→ incremental fct_orders
+→ mart_daily_sales
+```
+
+with dbt tests completing successfully.

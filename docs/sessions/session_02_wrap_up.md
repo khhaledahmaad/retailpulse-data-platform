@@ -421,3 +421,67 @@ Planned focus:
 - Inspect the first streaming DataFrame
 
 **Session 2 status: Complete**
+
+---
+
+## Later Kafka Persistence and Reconciliation Note — 12 August 2026
+
+The original Session 2 Kafka networking model remained correct:
+
+```text
+Windows producer
+→ localhost:9092
+
+Docker services
+→ kafka:29092
+```
+
+A later recovery test identified that Kafka broker data itself also needed persistence. The final platform therefore adds a named Kafka volume and a fixed KRaft cluster identity.
+
+Final Kafka persistence model:
+
+```text
+kafka_data
+→ /tmp/kraft-combined-logs
+
+CLUSTER_ID
+→ fixed value
+
+kafka-init
+→ initialises/chowns the Kafka log volume
+```
+
+This allows ordinary:
+
+```cmd
+docker compose down
+docker compose up -d
+```
+
+to preserve the `orders` topic and its offsets.
+
+### Final Topic Reconciliation
+
+For the current clean Kafka lineage, the authoritative broker end offsets were:
+
+```text
+orders:0:43
+orders:1:31
+orders:2:34
+```
+
+Total records:
+
+```text
+43 + 31 + 34 = 108
+```
+
+The Kafka UI displayed a separate `117 messages consumed` value during inspection. That UI value was not used as the authoritative topic-row count; broker partition end offsets are the reconciliation source of truth.
+
+Useful command:
+
+```cmd
+docker compose exec kafka /opt/kafka/bin/kafka-get-offsets.sh ^
+  --bootstrap-server localhost:9092 ^
+  --topic orders
+```

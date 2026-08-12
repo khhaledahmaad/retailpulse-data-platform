@@ -17,14 +17,16 @@ models:
       - name: event_type
         tests:
           - accepted_values:
-              values:
-                - order_created
+              arguments:
+                values:
+                  - order_created
 
       - name: currency
         tests:
           - accepted_values:
-              values:
-                - GBP
+              arguments:
+                values:
+                  - GBP
 
       - name: quantity
         tests:

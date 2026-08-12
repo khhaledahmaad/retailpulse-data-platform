@@ -423,3 +423,46 @@ Planned focus:
 - Introduce the first production-style data quality logic
 
 **Session 3 status: Complete**
+
+---
+
+## Later Streaming Reconciliation Note — 12 August 2026
+
+The Kafka metadata retained by the Session 3 Spark design proved important during final regression testing.
+
+For the current clean lineage, Spark Bronze and Silver contained:
+
+```text
+partition 0 → offsets 0–42 → 43 rows
+partition 1 → offsets 0–30 → 31 rows
+partition 2 → offsets 0–33 → 34 rows
+```
+
+Total:
+
+```text
+43 + 31 + 34 = 108 rows
+```
+
+This exactly matched Kafka's broker end offsets:
+
+```text
+orders:0:43
+orders:1:31
+orders:2:34
+```
+
+Therefore the final regression demonstrated:
+
+```text
+Kafka
+→ no offset gaps
+
+Bronze
+→ all 108 current-lineage messages present
+
+Silver
+→ all 108 valid messages present
+```
+
+The retained `partition` and `offset` fields were therefore useful not only for observability, but for end-to-end reconciliation.

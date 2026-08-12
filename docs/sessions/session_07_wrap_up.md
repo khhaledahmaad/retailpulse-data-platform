@@ -2,31 +2,13 @@
 
 **Date:** 11 August 2026  
 **Session:** 7  
-**Focus:** Airflow orchestration, successful end-to-end downstream pipeline, and Docker operational understanding
+**Focus:** Airflow orchestration, restart-safe Docker infrastructure, Kafka persistence, and end-to-end downstream pipeline execution
 
 ## Session Goal
 
-Add Apache Airflow to orchestrate the downstream RetailPulse workflow:
+Add Apache Airflow to orchestrate the downstream RetailPulse workflow and make the local platform restart-safe.
 
-```text
-Silver Parquet
-    ↓
-Incremental PostgreSQL loader
-    ↓
-Warehouse validation
-    ↓
-dbt build
-    ↓
-Pipeline metrics
-```
-
-The aim was to stop running the warehouse loader and dbt manually and instead manage them as an observable, retryable Airflow DAG.
-
----
-
-## Final Working Architecture
-
-The successful downstream architecture is:
+Target flow:
 
 ```text
 Kafka
@@ -35,14 +17,40 @@ Spark Structured Streaming
   ↓
 Silver Parquet
   ↓
-Airflow DAG
-  ├── run_incremental_loader
-  ├── validate_raw_orders
-  ├── run_dbt_build
-  └── record_pipeline_metrics
+Airflow
+  ↓
+Incremental PostgreSQL loader
+  ↓
+Warehouse validation
+  ↓
+dbt build
+  ↓
+Pipeline metrics
 ```
 
-Airflow does not manage the continuous Spark stream.
+The objective was to stop manually chaining the downstream steps and instead manage them through one observable, retryable Airflow DAG.
+
+---
+
+## Final Working Architecture
+
+```text
+Python Producer
+      ↓
+Kafka
+      ↓
+Spark Structured Streaming
+      ↓
+Bronze / Silver / Quarantine
+      ↓
+Airflow DAG
+      ├── run_incremental_loader
+      ├── validate_raw_orders
+      ├── run_dbt_build
+      └── record_pipeline_metrics
+```
+
+Airflow does not manage the long-running Spark stream.
 
 Instead:
 
@@ -60,7 +68,7 @@ Silver → PostgreSQL → dbt
 
 # 1. Airflow Docker Services
 
-The working Airflow deployment uses separate Docker services for:
+The working deployment uses:
 
 ```text
 airflow-db
@@ -76,13 +84,13 @@ Airflow uses its own PostgreSQL metadata database:
 airflow-db
 ```
 
-while RetailPulse application data remains in:
+RetailPulse application data remains in:
 
 ```text
 postgres
 ```
 
-These databases have different responsibilities:
+Responsibilities:
 
 ```text
 airflow-db
@@ -93,16 +101,14 @@ airflow-db
 
 postgres
 → raw.orders
-→ loader control tables
+→ control tables
 → analytics schema
 → dbt models
 ```
 
 ---
 
-# 2. Airflow Custom Docker Image
-
-The Airflow image was extended so Airflow tasks have the same dependencies required by the RetailPulse downstream pipeline.
+# 2. Airflow Custom Image
 
 `airflow/Dockerfile`:
 
@@ -117,7 +123,7 @@ RUN pip install --no-cache-dir \
     dbt-postgres
 ```
 
-This gives Airflow access to:
+Dependencies:
 
 ```text
 psycopg
@@ -132,106 +138,41 @@ dbt-postgres
 
 ---
 
-# 3. Important Airflow 3 Configuration
+# 3. Airflow Execution Configuration
 
-The working Airflow configuration includes a shared Execution API URL:
-
-```yaml
-AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
-```
-
-This allows tasks launched through LocalExecutor to communicate correctly with the Airflow API server.
-
-The scheduler therefore communicates with:
-
-```text
-airflow-api-server:8080
-```
-
-inside the Docker network rather than using host-local addressing.
-
-A shared JWT secret is also configured across the Airflow components:
-
-```yaml
-AIRFLOW__API_AUTH__JWT_SECRET: <shared-secret>
-```
-
-The same secret is available to both:
-
-```text
-airflow-scheduler
-airflow-api-server
-```
-
-so internal task-authentication tokens can be generated and validated consistently.
-
----
-
-# 4. Executor
-
-The final setup uses:
-
-```text
-LocalExecutor
-```
-
-Configured with:
+The working Airflow configuration includes:
 
 ```yaml
 AIRFLOW__CORE__EXECUTOR: LocalExecutor
 ```
 
-This is suitable for the current single-machine RetailPulse portfolio environment.
+and:
 
-Verification command:
-
-```cmd
-docker compose exec airflow-scheduler airflow config get-value core executor
+```yaml
+AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
 ```
 
-Expected:
+This allows LocalExecutor task subprocesses to communicate with the Airflow API server over the internal Docker network.
 
-```text
-LocalExecutor
+A shared JWT secret is also configured:
+
+```yaml
+AIRFLOW__API_AUTH__JWT_SECRET: <shared-secret>
 ```
+
+The scheduler and API server use the same value so internal task authentication succeeds.
 
 ---
 
-# 5. Airflow API Connectivity
+# 4. Airflow DAG
 
-The final configuration was verified from inside the scheduler container.
-
-Execution API URL:
-
-```cmd
-docker compose exec airflow-scheduler airflow config get-value core execution_api_server_url
-```
-
-Expected:
-
-```text
-http://airflow-api-server:8080/execution/
-```
-
-Network/API health was verified with:
-
-```cmd
-docker compose exec airflow-scheduler curl -i http://airflow-api-server:8080/api/v2/monitor/health
-```
-
-The Airflow health endpoint returned successfully.
-
----
-
-# 6. DAG
-
-The RetailPulse orchestration DAG is:
+The orchestration DAG is:
 
 ```text
 retailpulse_warehouse_pipeline
 ```
 
-Main flow:
+Task flow:
 
 ```text
 run_incremental_loader
@@ -243,23 +184,17 @@ run_dbt_build
 record_pipeline_metrics
 ```
 
-The DAG is mounted into Airflow from:
-
-```text
-airflow/dags/
-```
-
 ---
 
-# 7. Incremental Loader Task
+# 5. Incremental Loader Task
 
-The first task executes the existing warehouse loader:
+The first task executes:
 
 ```text
 warehouse/loader/load_orders.py
 ```
 
-Conceptually:
+Flow:
 
 ```text
 Silver Parquet
@@ -271,7 +206,7 @@ new files only
 raw.orders
 ```
 
-The loader remains idempotent through:
+Idempotency is maintained through:
 
 ```text
 control.loader_watermarks
@@ -279,24 +214,20 @@ control.loaded_files
 raw.orders.event_id primary key
 ```
 
-So Airflow can safely run it repeatedly.
-
 ---
 
-# 8. Warehouse Validation Task
+# 6. Warehouse Validation
 
-After the loader succeeds, Airflow validates the warehouse.
-
-The validation checks:
+The validation task checks:
 
 ```text
 raw.orders row count
 latest loaded_at timestamp
 ```
 
-and fails the pipeline if the warehouse contains no rows.
+and prevents dbt from running if the warehouse is empty.
 
-This creates an explicit quality gate between ingestion and analytics:
+This provides an explicit quality gate:
 
 ```text
 loader
@@ -308,17 +239,21 @@ dbt
 
 ---
 
-# 9. dbt Task
+# 7. dbt Task
 
-The next task runs:
+Airflow runs:
 
 ```text
 dbt build
 ```
 
-against the RetailPulse dbt project.
+against:
 
-The dbt pipeline is:
+```text
+warehouse/dbt/retailpulse
+```
+
+Current dbt flow:
 
 ```text
 raw.orders
@@ -330,7 +265,7 @@ fct_orders
 mart_daily_sales
 ```
 
-Current materialisation strategy:
+Materialisation strategy:
 
 ```text
 stg_orders
@@ -343,16 +278,14 @@ mart_daily_sales
 → table
 ```
 
-So each Airflow run does not rebuild the large event-level fact table from scratch.
-
 ---
 
-# 10. dbt Docker Profile
+# 8. dbt Docker Profile
 
-dbt inside Airflow must connect to PostgreSQL using the Docker service name:
+Inside Docker, dbt connects to PostgreSQL using:
 
 ```text
-postgres
+host: postgres
 ```
 
 rather than:
@@ -370,27 +303,11 @@ dbname: retailpulse
 schema: analytics
 ```
 
-This profile is mounted into the Airflow container and used during the DAG's dbt task.
-
 ---
 
-# 11. Metrics Task
+# 9. Successful Airflow Run
 
-The final task records/logs pipeline-level information such as:
-
-```text
-raw.orders row count
-latest warehouse load timestamp
-pipeline completion
-```
-
-This provides a simple operational summary after successful execution.
-
----
-
-# 12. Successful End-to-End Run
-
-The final DAG run completed successfully:
+The final DAG completed successfully:
 
 ```text
 run_incremental_loader   ✅
@@ -399,25 +316,240 @@ run_dbt_build            ✅
 record_pipeline_metrics  ✅
 ```
 
-This proves that the following components now work together:
+This proves successful integration across:
 
 ```text
 Airflow scheduler
-Airflow LocalExecutor
+LocalExecutor
 Airflow API server
-RetailPulse PostgreSQL
+PostgreSQL
 Silver Parquet
-Python warehouse loader
+warehouse loader
 dbt
-Airflow task dependencies
-Airflow retries/logging
+Airflow retries
+Airflow logs
+task dependencies
 ```
 
 ---
 
-# 13. UI Port Allocation
+# 10. Kafka Persistence
 
-The local development interfaces are now separated cleanly:
+Kafka originally ran without persistent broker storage.
+
+That meant:
+
+```text
+docker compose down
+docker compose up -d
+```
+
+could recreate Kafka with fresh topic/offset state while Spark checkpoints remained on disk.
+
+This could create a mismatch:
+
+```text
+Spark checkpoint
+→ remembers old Kafka offsets
+
+fresh Kafka container
+→ old offsets no longer exist
+```
+
+The permanent fix was to persist Kafka's KRaft log directory.
+
+Kafka now uses:
+
+```yaml
+volumes:
+  - kafka_data:/tmp/kraft-combined-logs
+```
+
+and:
+
+```yaml
+KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+```
+
+The named volume is declared as:
+
+```yaml
+volumes:
+  postgres_data:
+  airflow_db_data:
+  kafka_data:
+```
+
+Kafka broker state, topics, partition logs, and offsets now survive ordinary container recreation.
+
+---
+
+# 11. Kafka Volume Ownership Fix
+
+The Apache Kafka container runs as:
+
+```text
+uid=1000(appuser)
+gid=1000(appuser)
+```
+
+The newly created Docker volume initially caused a write-permission problem.
+
+The permanent fix was to add a one-time `kafka-init` service:
+
+```yaml
+kafka-init:
+  image: alpine:3.20
+  user: "0:0"
+
+  volumes:
+    - kafka_data:/tmp/kraft-combined-logs
+
+  command:
+    - /bin/sh
+    - -c
+    - |
+      mkdir -p /tmp/kraft-combined-logs
+      chown -R 1000:1000 /tmp/kraft-combined-logs
+
+  restart: "no"
+```
+
+Kafka waits for it:
+
+```yaml
+depends_on:
+  kafka-init:
+    condition: service_completed_successfully
+```
+
+Final startup sequence:
+
+```text
+kafka_data volume
+      ↓
+kafka-init
+      ↓
+chown 1000:1000
+      ↓
+kafka-init exits 0
+      ↓
+Kafka starts
+```
+
+---
+
+# 12. Fixed KRaft Cluster ID
+
+Kafka now uses a fixed cluster ID:
+
+```yaml
+CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+```
+
+This keeps the KRaft metadata identity stable across restarts.
+
+---
+
+# 13. One-Time Topic Recreation
+
+Because the persistent Kafka volume was new, the `orders` topic had to be recreated once.
+
+Command:
+
+```cmd
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh ^
+  --bootstrap-server localhost:9092 ^
+  --create ^
+  --topic orders ^
+  --partitions 3 ^
+  --replication-factor 1
+```
+
+Verification:
+
+```cmd
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh ^
+  --bootstrap-server localhost:9092 ^
+  --list
+```
+
+Expected:
+
+```text
+orders
+```
+
+After this migration, the topic should survive normal Compose restarts.
+
+---
+
+# 14. Restart-Safe State
+
+The important persistent components are now:
+
+```text
+PostgreSQL
+→ postgres_data
+
+Airflow metadata
+→ airflow_db_data
+
+Kafka broker state
+→ kafka_data
+
+Spark stream checkpoints
+→ host-mounted data_lake/checkpoints
+```
+
+This means:
+
+```cmd
+docker compose down
+docker compose up -d
+```
+
+can recreate containers while preserving the important platform state.
+
+---
+
+# 15. Important `down` Behavior
+
+Safe for normal development:
+
+```cmd
+docker compose down
+```
+
+This stops/removes containers and the Compose network but preserves named volumes.
+
+Then:
+
+```cmd
+docker compose up -d
+```
+
+recreates and starts the stack using the existing persistent data.
+
+Use caution with:
+
+```cmd
+docker compose down -v
+```
+
+because `-v` removes named volumes, including:
+
+```text
+postgres_data
+airflow_db_data
+kafka_data
+```
+
+That would intentionally remove persistent state.
+
+---
+
+# 16. UI Ports
 
 ```text
 Kafka UI
@@ -435,7 +567,7 @@ Airflow
 
 ---
 
-# 14. Useful Airflow Commands
+# 17. Useful Airflow Commands
 
 List DAGs:
 
@@ -443,288 +575,328 @@ List DAGs:
 docker compose exec airflow-scheduler airflow dags list
 ```
 
-This is a DAG-discovery/parsing check.
-
-It confirms that Airflow can see:
-
-```text
-retailpulse_warehouse_pipeline
-```
-
-It is not specifically tied to dbt configuration.
-
-The dbt profile is required when the DAG reaches:
-
-```text
-run_dbt_build
-```
-
----
-
-# 15. Docker Concepts Consolidated During the Session
-
-## Docker Image
-
-An image is the blueprint used to create containers.
-
-Example:
-
-```text
-apache/airflow image
-    ↓
-custom Dockerfile
-    ↓
-RetailPulse Airflow image
-```
-
----
-
-## Docker Container
-
-A container is a running instance of an image.
-
-Example:
-
-```text
-Airflow image
-    ↓
-airflow-scheduler container
-```
-
----
-
-## Docker Volume
-
-A volume is persistent storage that lives separately from containers.
-
-Example:
-
-```yaml
-postgres_data:/var/lib/postgresql/data
-```
-
-This allows database data to survive container recreation.
-
-Conceptually:
-
-```text
-container
-→ disposable runtime
-
-volume
-→ persistent data
-```
-
----
-
-## docker build
-
-Builds an image from a Dockerfile.
-
-Example:
+Check executor:
 
 ```cmd
-docker build -t my-image .
+docker compose exec airflow-scheduler airflow config get-value core executor
 ```
 
-Conceptually:
+Expected:
+
+```text
+LocalExecutor
+```
+
+Check Execution API URL:
+
+```cmd
+docker compose exec airflow-scheduler airflow config get-value core execution_api_server_url
+```
+
+Expected:
+
+```text
+http://airflow-api-server:8080/execution/
+```
+
+---
+
+# 18. Useful Kafka Commands
+
+List topics:
+
+```cmd
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh ^
+  --bootstrap-server localhost:9092 ^
+  --list
+```
+
+Check Kafka container state:
+
+```cmd
+docker compose ps -a
+```
+
+Inspect Kafka logs:
+
+```cmd
+docker compose logs kafka --tail 100
+```
+
+---
+
+# 19. Docker Concepts Consolidated
+
+## Image
+
+Blueprint used to create containers.
 
 ```text
 Dockerfile
    ↓
 docker build
    ↓
-Docker image
+image
 ```
 
----
+## Container
 
-## docker compose build
+Running instance of an image.
 
-Builds images for services in `docker-compose.yml` that use:
+## Volume
 
-```yaml
-build:
-```
+Persistent storage that survives container recreation.
 
-It does not rebuild services that simply reference existing images unless those services also define build instructions.
+## `docker build`
 
----
+Builds one image from a Dockerfile.
 
-## docker compose up
+## `docker compose build`
 
-Creates/recreates and starts the Compose services.
+Builds services in `docker-compose.yml` that define `build:`.
 
-Typical command:
+## `docker compose up`
 
-```cmd
-docker compose up -d
-```
+Creates/recreates and starts Compose services.
 
-`-d` runs the containers in the background.
+## `docker compose down`
 
----
+Stops and removes Compose containers and network.
 
-## docker compose down
-
-Stops and removes the Compose containers and network:
-
-```cmd
-docker compose down
-```
-
-Named volumes normally remain.
-
-Therefore persistent PostgreSQL data survives a normal `down`.
-
----
-
-## docker compose down -v
-
-This additionally removes named volumes.
-
-Example:
-
-```cmd
-docker compose down -v
-```
-
-This should be treated carefully because it can remove persistent database state.
-
----
+Named volumes normally survive.
 
 ## Docker vs Docker Compose
 
-Docker manages containers/images directly.
-
-Examples:
-
-```cmd
-docker build
-docker run
-docker ps
-docker images
-docker volume ls
-```
-
-Docker Compose manages a multi-container application defined in:
-
-```text
-docker-compose.yml
-```
-
-Examples:
-
-```cmd
-docker compose build
-docker compose up
-docker compose down
-docker compose ps
-```
-
-For RetailPulse:
-
 ```text
 Docker
-→ actually runs PostgreSQL, Kafka, Spark and Airflow containers
+→ manages images/containers directly
 
 Docker Compose
-→ defines how the entire stack works together
+→ coordinates the multi-container RetailPulse stack
 ```
 
 ---
 
-# 16. Final Mental Model
-
-```text
-Dockerfile
-    ↓
-docker build / docker compose build
-    ↓
-IMAGE
-    ↓
-docker compose up
-    ↓
-CONTAINER
-    ↓
-VOLUME
-    ↓
-persistent data
-```
-
-For RetailPulse specifically:
-
-```text
-docker-compose.yml
-      ↓
-Docker Compose
-      ↓
-PostgreSQL + Kafka + Spark + Airflow
-      ↓
-coordinated local data platform
-```
-
----
-
-# 17. Git Commit
-
-Recommended Session 7 commit:
-
-```cmd
-git add .
-git commit -m "Add Airflow orchestration for warehouse and dbt pipeline"
-git push origin main
-```
-
----
-
-# Session 7 Completion Checklist
-
-- [x] Custom Airflow image created
-- [x] Airflow metadata PostgreSQL configured
-- [x] LocalExecutor configured
-- [x] Airflow API server configured
-- [x] Airflow scheduler configured
-- [x] DAG processor configured
-- [x] Shared Execution API URL configured
-- [x] Shared Airflow JWT secret configured
-- [x] Airflow health endpoint reachable
-- [x] DAG visible in Airflow
-- [x] Incremental loader runs through Airflow
-- [x] Warehouse validation succeeds
-- [x] dbt build succeeds from Airflow
-- [x] Pipeline metrics task succeeds
-- [x] Full DAG completes successfully
-- [x] Airflow UI available on port 8083
-- [x] Docker image/container/volume concepts clarified
-- [x] Docker vs Docker Compose clarified
-
----
-
-## Current RetailPulse Platform
-
-At the end of Session 7:
+# 20. Final Platform State
 
 ```text
 Python Producer
       ↓
 Kafka
       ↓
+persistent kafka_data volume
+      ↓
 Spark Structured Streaming
       ↓
 Bronze / Silver / Quarantine
       ↓
-Incremental PostgreSQL Loader
+persistent Spark checkpoints
+      ↓
+Airflow
+      ↓
+incremental PostgreSQL loader
       ↓
 raw.orders
       ↓
-dbt
+dbt staging / fact / mart
       ↓
-staging / fact / mart
-      ↓
-Airflow orchestration
+pipeline metrics
 ```
 
-RetailPulse now has a complete local event-driven data-engineering pipeline with streaming ingestion, lakehouse layers, incremental warehouse loading, analytics engineering, testing, and workflow orchestration.
+The platform now supports:
+
+```text
+streaming ingestion
+lakehouse layering
+checkpoint recovery
+persistent Kafka state
+incremental warehouse loading
+dbt transformations
+data-quality tests
+Airflow orchestration
+retries and logs
+restart-safe Docker infrastructure
+```
+
+---
+
+# Session 7 Completion Checklist
+
+- [x] Custom Airflow image
+- [x] Airflow metadata database
+- [x] LocalExecutor
+- [x] Airflow API server
+- [x] DAG processor
+- [x] shared Execution API URL
+- [x] shared Airflow JWT secret
+- [x] Airflow DAG visible
+- [x] incremental loader task succeeds
+- [x] warehouse validation succeeds
+- [x] dbt build succeeds
+- [x] pipeline metrics succeeds
+- [x] full Airflow DAG succeeds
+- [x] Kafka persistent named volume
+- [x] Kafka KRaft log directory persisted
+- [x] Kafka volume ownership handled by `kafka-init`
+- [x] fixed KRaft cluster ID
+- [x] `orders` topic recreated once
+- [x] Kafka state survives ordinary Compose recreation
+- [x] Spark checkpoints remain persistent
+- [x] PostgreSQL state remains persistent
+- [x] Airflow metadata remains persistent
+- [x] Docker/Compose concepts clarified
 
 **Session 7 status: Complete**
+
+---
+
+# 18. Final Regression Validation — 12 August 2026
+
+After the Airflow infrastructure fixes, the downstream pipeline was exercised through repeated regression runs.
+
+Two subsequent Airflow DAG runs completed without task failure:
+
+```text
+run_incremental_loader   ✅
+validate_raw_orders      ✅
+run_dbt_build            ✅
+record_pipeline_metrics  ✅
+```
+
+The test specifically validated repeated incremental execution rather than only a first successful DAG run.
+
+Expected behaviour was confirmed:
+
+```text
+new Kafka events
+      ↓
+Spark writes new Silver files
+      ↓
+Airflow loader scans watermark/current partitions
+      ↓
+already-loaded files skipped
+      ↓
+only new files loaded
+      ↓
+dbt incremental fact processes new warehouse rows
+```
+
+This demonstrates that the DAG can be safely triggered repeatedly without reloading historical Silver files.
+
+---
+
+# 19. Restart / Persistence Regression
+
+The platform's normal restart model is:
+
+```cmd
+docker compose down
+docker compose up -d
+```
+
+The final architecture preserves:
+
+```text
+Kafka broker data       → kafka_data
+PostgreSQL data         → postgres_data
+Airflow metadata        → airflow_db_data
+Spark lake files        → host-mounted data_lake/
+Spark checkpoints       → host-mounted data_lake/checkpoints/
+```
+
+`docker compose down -v` remains destructive to named volumes and is not part of normal operation.
+
+The Kafka persistence fix and existing Spark checkpoints are now aligned so ordinary Compose recreation does not create the previous broker/checkpoint offset mismatch.
+
+---
+
+# 20. Final End-to-End Reconciliation
+
+A final count discrepancy investigation compared the Kafka UI, Kafka broker offsets, Bronze, Silver, Quarantine, and downstream analytics.
+
+Kafka UI displayed:
+
+```text
+117 messages consumed
+```
+
+but this was not treated as the authoritative number of current topic records.
+
+The Kafka broker reported:
+
+```text
+orders:0:43
+orders:1:31
+orders:2:34
+```
+
+Therefore:
+
+```text
+43 + 31 + 34 = 108 current Kafka records
+```
+
+Spark Bronze:
+
+```text
+partition 0 → offsets 0–42 → 43 rows
+partition 1 → offsets 0–30 → 31 rows
+partition 2 → offsets 0–33 → 34 rows
+```
+
+Spark Silver had the same partition/offset ranges.
+
+Final reconciliation:
+
+```text
+Kafka broker records = 108
+Bronze               = 108
+Silver               = 108
+Quarantine           =   0
+Warehouse / dbt      = 108
+```
+
+This proves that the current clean lineage is fully reconciled and contains no missing Kafka offsets between the broker and Bronze.
+
+The Kafka UI's message-browser/export was also paginated, so its `messages consumed` display should not be used as the primary end-to-end row-count metric.
+
+Authoritative Kafka check:
+
+```cmd
+docker compose exec kafka /opt/kafka/bin/kafka-get-offsets.sh ^
+  --bootstrap-server localhost:9092 ^
+  --topic orders
+```
+
+Spark reconciliation check:
+
+```python
+from pyspark.sql import functions as F
+
+bronze.groupBy("partition").agg(
+    F.min("offset").alias("min_offset"),
+    F.max("offset").alias("max_offset"),
+    F.count("*").alias("rows"),
+).orderBy("partition").show()
+```
+
+---
+
+# 21. Final Session 7 Validation Checklist
+
+- [x] Airflow DAG succeeds end to end
+- [x] repeated Airflow regression runs succeed
+- [x] incremental loader remains idempotent
+- [x] dbt incremental build succeeds from Airflow
+- [x] Kafka broker state is persistent
+- [x] Spark checkpoints are persistent
+- [x] ordinary Compose restart model is understood
+- [x] Kafka broker offsets reconciled by partition
+- [x] Bronze offsets continuous from zero
+- [x] Silver exactly matches Bronze
+- [x] Quarantine contains zero current test records
+- [x] warehouse/dbt row count matches current 108-row lineage
+- [x] Kafka UI count discrepancy explained
+- [x] end-to-end current lineage reconciled successfully
+
+**Validated platform checkpoint before Session 8: 108 current-lineage order events end to end.**

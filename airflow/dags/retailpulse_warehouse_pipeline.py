@@ -72,6 +72,7 @@ def retailpulse_warehouse_pipeline():
         bash_command=(
             f"cd {DBT_ROOT} && "
             "dbt build "
+            "--target airflow "
             "--profiles-dir /opt/retailpulse/warehouse/dbt/retailpulse"
         ),
     )

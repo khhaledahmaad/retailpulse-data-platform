@@ -303,3 +303,35 @@ Next session will focus on:
 - [x] Initial Git commit created
 
 **Session 1 status: Complete**
+
+---
+
+## Later Platform Validation Note — 12 August 2026
+
+The foundation created in Session 1 remained valid through the later platform build.
+
+Final persistence behaviour confirmed:
+
+```text
+docker compose down
+→ containers/network removed
+→ named volumes retained
+
+docker compose up -d
+→ services recreated
+→ persistent state restored
+```
+
+Persistent application state now includes PostgreSQL data, Kafka broker data, and Airflow metadata, while the Spark lake/checkpoint state remains host-mounted under `data_lake/`.
+
+Important operational rule:
+
+```text
+docker compose down
+→ normal restart-safe operation
+
+docker compose down -v
+→ destructive for named-volume state
+```
+
+The original Session 1 Docker/image/container/volume foundation therefore remained the correct base for the completed platform.
