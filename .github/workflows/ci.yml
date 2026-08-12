@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: pytest -v
+
+      - name: Create dbt CI profile
+        run: |
+          mkdir -p ~/.dbt
+
+          cat > ~/.dbt/profiles.yml <<'EOF'
+          retailpulse:
+            target: ci
+
+            outputs:
+              ci:
+                type: postgres
+                host: localhost
+                user: retailpulse
+                password: retailpulse
+                port: 5432
+                dbname: retailpulse
+                schema: analytics
+                threads: 4
+          EOF
+
+      - name: dbt parse
+        working-directory: warehouse/dbt/retailpulse
+        run: dbt parse --no-partial-parse --target ci
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet

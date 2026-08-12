@@ -141,7 +141,7 @@ def already_loaded(
 def load_file(
     conn: psycopg.Connection,
     path: Path,
-) -> int:
+) -> tuple[int, int]:
     table = pq.ParquetFile(path).read()
 
     rows = table.to_pylist()
@@ -170,14 +170,19 @@ def load_file(
         for row in rows
     ]
 
+    processed_rows = len(values)
+    inserted_rows = 0
+
     if values:
         with conn.cursor() as cur:
             cur.executemany(
                 INSERT_ORDER_SQL,
                 values,
+                returning=False,
             )
+            inserted_rows = cur.rowcount
 
-    return len(values)
+    return processed_rows, inserted_rows
 
 
 def register_file(
@@ -237,8 +242,11 @@ def update_watermark(
 
 
 def main() -> None:
+    discovered_files = 0
+    skipped_files = 0
     loaded_files = 0
-    loaded_rows = 0
+    processed_rows = 0
+    inserted_rows = 0
 
     with psycopg.connect(
         host=DB_HOST,
@@ -274,6 +282,8 @@ def main() -> None:
                 f"{len(files)} files"
             )
 
+            discovered_files += len(files)
+
             for path in files:
                 file_id = path.as_posix()
 
@@ -281,10 +291,12 @@ def main() -> None:
                     conn,
                     file_id,
                 ):
+                    skipped_files += 1
+                    print(f"SKIPPED: {file_id} (already loaded)")
                     continue
 
                 with conn.transaction():
-                    row_count = load_file(
+                    file_processed_rows, file_inserted_rows = load_file(
                         conn,
                         path,
                     )
@@ -292,13 +304,23 @@ def main() -> None:
                     register_file(
                         conn,
                         file_id,
-                        row_count,
+                        file_processed_rows,
                     )
 
-                loaded_files += 1
-                loaded_rows += row_count
+                file_duplicate_rows = (
+                    file_processed_rows - file_inserted_rows
+                )
 
-                print(f"LOADED: {file_id} ({row_count} rows)")
+                loaded_files += 1
+                processed_rows += file_processed_rows
+                inserted_rows += file_inserted_rows
+
+                print(
+                    f"LOADED: {file_id} "
+                    f"(processed={file_processed_rows}, "
+                    f"inserted={file_inserted_rows}, "
+                    f"duplicates={file_duplicate_rows})"
+                )
 
             with conn.transaction():
                 update_watermark(
@@ -307,10 +329,16 @@ def main() -> None:
                     partition_hour,
                 )
 
+    duplicate_rows = processed_rows - inserted_rows
+
     print()
     print("Load complete.")
+    print(f"Files discovered: {discovered_files}")
+    print(f"Files skipped: {skipped_files}")
     print(f"Files loaded: {loaded_files}")
-    print(f"Rows processed: {loaded_rows}")
+    print(f"Rows processed: {processed_rows}")
+    print(f"Rows inserted: {inserted_rows}")
+    print(f"Duplicate rows ignored: {duplicate_rows}")
 
 
 if __name__ == "__main__":

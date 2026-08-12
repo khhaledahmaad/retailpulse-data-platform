@@ -1,10 +1,9 @@
 from datetime import timedelta
 
+import psycopg
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task
 from pendulum import datetime
-
-import psycopg
 
 WAREHOUSE_ROOT = "/opt/retailpulse/warehouse"
 DBT_ROOT = f"{WAREHOUSE_ROOT}/dbt/retailpulse"
