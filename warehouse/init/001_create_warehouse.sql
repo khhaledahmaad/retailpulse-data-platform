@@ -48,3 +48,19 @@ CREATE TABLE IF NOT EXISTS control.loader_watermarks (
         ),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS control.pipeline_metrics (
+    metric_id BIGSERIAL PRIMARY KEY,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    silver_rows BIGINT,
+    raw_orders BIGINT,
+    fact_orders BIGINT,
+    gold_order_count BIGINT,
+
+    latest_loaded_at TIMESTAMPTZ,
+    duplicate_rows BIGINT,
+
+    status TEXT NOT NULL,
+    details TEXT
+);

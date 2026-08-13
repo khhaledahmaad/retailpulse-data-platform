@@ -76,6 +76,14 @@ def retailpulse_warehouse_pipeline():
         ),
     )
 
+    check_pipeline_health = BashOperator(
+        task_id="check_pipeline_health",
+        bash_command=(
+            "cd /opt/retailpulse && "
+            "python warehouse/monitoring/check_pipeline_health.py"
+        ),
+    )
+
     @task
     def record_pipeline_metrics(
         validation: dict,
@@ -86,12 +94,19 @@ def retailpulse_warehouse_pipeline():
 
     validation = validate_raw_orders()
 
-    run_incremental_loader >> validation
-    validation >> run_dbt_build
+    metrics = record_pipeline_metrics(validation)
+
+    validation = validate_raw_orders()
 
     metrics = record_pipeline_metrics(validation)
 
-    run_dbt_build >> metrics
+    (
+        run_incremental_loader
+        >> validation
+        >> run_dbt_build
+        >> check_pipeline_health
+        >> metrics
+    )
 
 
 retailpulse_warehouse_pipeline()
