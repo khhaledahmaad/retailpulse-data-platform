@@ -14,13 +14,14 @@ def test_health_is_healthy_when_all_layers_reconcile():
         fact_orders=127,
         gold_order_count=127,
         latest_loaded_at=latest_load,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "HEALTHY"
     assert result["issues"] == []
 
 
-def test_health_detects_bronze_reconciliation_failure():
+def test_health_warns_when_bronze_gap_is_within_tolerance():
     latest_load = datetime.now(timezone.utc)
 
     result = evaluate_health(
@@ -31,27 +32,101 @@ def test_health_detects_bronze_reconciliation_failure():
         fact_orders=127,
         gold_order_count=127,
         latest_loaded_at=latest_load,
+        max_lag_rows=5,
     )
 
-    assert result["status"] == "DEGRADED"
-    assert any("Bronze does not reconcile" in issue for issue in result["issues"])
+    assert result["status"] == "WARNING"
+    assert any("Bronze" in issue for issue in result["issues"])
 
 
-def test_health_detects_silver_raw_mismatch():
+def test_health_degrades_when_bronze_gap_exceeds_tolerance():
     latest_load = datetime.now(timezone.utc)
 
     result = evaluate_health(
-        bronze_rows=128,
-        silver_rows=128,
+        bronze_rows=133,
+        silver_rows=127,
         quarantine_rows=0,
         raw_orders=127,
         fact_orders=127,
         gold_order_count=127,
         latest_loaded_at=latest_load,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "DEGRADED"
-    assert any("Silver does not reconcile" in issue for issue in result["issues"])
+    assert any("Bronze" in issue for issue in result["issues"])
+
+
+def test_health_warns_when_silver_leads_raw_within_tolerance():
+    latest_load = datetime.now(timezone.utc)
+
+    result = evaluate_health(
+        bronze_rows=130,
+        silver_rows=130,
+        quarantine_rows=0,
+        raw_orders=127,
+        fact_orders=127,
+        gold_order_count=127,
+        latest_loaded_at=latest_load,
+        max_lag_rows=5,
+    )
+
+    assert result["status"] == "WARNING"
+    assert any("Silver" in issue for issue in result["issues"])
+
+
+def test_health_degrades_when_silver_raw_gap_exceeds_tolerance():
+    latest_load = datetime.now(timezone.utc)
+
+    result = evaluate_health(
+        bronze_rows=133,
+        silver_rows=133,
+        quarantine_rows=0,
+        raw_orders=127,
+        fact_orders=127,
+        gold_order_count=127,
+        latest_loaded_at=latest_load,
+        max_lag_rows=5,
+    )
+
+    assert result["status"] == "DEGRADED"
+    assert any("Silver" in issue for issue in result["issues"])
+
+
+def test_health_degrades_when_raw_is_ahead_of_silver():
+    latest_load = datetime.now(timezone.utc)
+
+    result = evaluate_health(
+        bronze_rows=127,
+        silver_rows=127,
+        quarantine_rows=0,
+        raw_orders=128,
+        fact_orders=128,
+        gold_order_count=128,
+        latest_loaded_at=latest_load,
+        max_lag_rows=5,
+    )
+
+    assert result["status"] == "DEGRADED"
+    assert any("Silver" in issue for issue in result["issues"])
+
+
+def test_strict_health_requires_exact_reconciliation():
+    latest_load = datetime.now(timezone.utc)
+
+    result = evaluate_health(
+        bronze_rows=130,
+        silver_rows=127,
+        quarantine_rows=0,
+        raw_orders=127,
+        fact_orders=127,
+        gold_order_count=127,
+        latest_loaded_at=latest_load,
+        max_lag_rows=5,
+        strict=True,
+    )
+
+    assert result["status"] == "DEGRADED"
 
 
 def test_health_detects_raw_fact_mismatch():
@@ -65,6 +140,7 @@ def test_health_detects_raw_fact_mismatch():
         fact_orders=126,
         gold_order_count=126,
         latest_loaded_at=latest_load,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "DEGRADED"
@@ -82,6 +158,7 @@ def test_health_detects_fact_gold_mismatch():
         fact_orders=127,
         gold_order_count=126,
         latest_loaded_at=latest_load,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "DEGRADED"
@@ -99,6 +176,7 @@ def test_health_detects_stale_warehouse_data():
         fact_orders=127,
         gold_order_count=127,
         latest_loaded_at=stale_load,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "DEGRADED"
@@ -114,6 +192,7 @@ def test_health_detects_missing_load_timestamp():
         fact_orders=127,
         gold_order_count=127,
         latest_loaded_at=None,
+        max_lag_rows=5,
     )
 
     assert result["status"] == "DEGRADED"

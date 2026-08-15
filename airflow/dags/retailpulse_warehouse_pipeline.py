@@ -96,10 +96,6 @@ def retailpulse_warehouse_pipeline():
 
     metrics = record_pipeline_metrics(validation)
 
-    validation = validate_raw_orders()
-
-    metrics = record_pipeline_metrics(validation)
-
     (
         run_incremental_loader
         >> validation

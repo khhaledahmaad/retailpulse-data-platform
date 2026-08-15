@@ -26,6 +26,10 @@ x-airflow-common: &airflow-common
     POSTGRES_USER: retailpulse
     POSTGRES_PASSWORD: retailpulse
 
+    # Pipeline monitoring SLOs.
+    MAX_LAG_ROWS: "${MAX_LAG_ROWS:-60}"
+    MAX_LOAD_AGE_MINUTES: "${MAX_LOAD_AGE_MINUTES:-2880}"
+
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs

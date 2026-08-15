@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from datetime import datetime, timezone
@@ -6,6 +7,14 @@ from urllib.parse import unquote, urlparse
 
 import psycopg
 import pyarrow.parquet as pq
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(
+    dotenv_path=PROJECT_ROOT / ".env",
+    override=False,
+)
 
 BRONZE_ROOT = Path("data_lake/bronze/orders")
 SILVER_ROOT = Path("data_lake/silver/orders")
@@ -18,6 +27,7 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "retailpulse")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "retailpulse")
 
 MAX_LOAD_AGE_MINUTES = int(os.getenv("MAX_LOAD_AGE_MINUTES", "2880"))
+MAX_LAG_ROWS = int(os.getenv("MAX_LAG_ROWS", "60"))
 
 
 def get_connection():
@@ -263,72 +273,86 @@ def evaluate_health(
     fact_orders,
     gold_order_count,
     latest_loaded_at,
+    max_lag_rows=MAX_LAG_ROWS,
+    strict=False,
 ):
     issues = []
+    degraded = False
 
-    if bronze_rows != (silver_rows + quarantine_rows):
+    bronze_expected = silver_rows + quarantine_rows
+    bronze_gap = bronze_rows - bronze_expected
+
+    if bronze_gap != 0:
         issues.append(
-            
-                "Bronze does not reconcile with "
-                "Silver + Quarantine: "
-                f"{bronze_rows} != "
-                f"{silver_rows} + "
-                f"{quarantine_rows}"
-            
+            "Bronze does not reconcile with "
+            "Silver + Quarantine: "
+            f"{bronze_rows} != "
+            f"{silver_rows} + "
+            f"{quarantine_rows} "
+            f"(gap={bronze_gap})"
         )
 
-    if silver_rows != raw_orders:
+        if strict or abs(bronze_gap) > max_lag_rows:
+            degraded = True
+
+    silver_raw_gap = silver_rows - raw_orders
+
+    if silver_raw_gap != 0:
         issues.append(
-            
-                "Silver does not reconcile with "
-                "raw.orders: "
-                f"{silver_rows} != "
-                f"{raw_orders}"
-            
+            "Silver does not reconcile with "
+            "raw.orders: "
+            f"{silver_rows} != "
+            f"{raw_orders} "
+            f"(gap={silver_raw_gap})"
         )
+
+        if strict or silver_raw_gap < 0 or silver_raw_gap > max_lag_rows:
+            degraded = True
 
     if raw_orders != fact_orders:
         issues.append(
-            
-                "raw.orders does not reconcile "
-                "with fct_orders: "
-                f"{raw_orders} != "
-                f"{fact_orders}"
-            
+            "raw.orders does not reconcile "
+            "with fct_orders: "
+            f"{raw_orders} != "
+            f"{fact_orders}"
         )
+        degraded = True
 
     if fact_orders != gold_order_count:
         issues.append(
-            
-                "fct_orders does not reconcile "
-                "with Gold order count: "
-                f"{fact_orders} != "
-                f"{gold_order_count}"
-            
+            "fct_orders does not reconcile "
+            "with Gold order count: "
+            f"{fact_orders} != "
+            f"{gold_order_count}"
         )
+        degraded = True
 
     load_age_minutes = calculate_load_age_minutes(latest_loaded_at)
 
     if latest_loaded_at is None:
         issues.append("No warehouse load timestamp available")
+        degraded = True
 
     elif load_age_minutes > MAX_LOAD_AGE_MINUTES:
         issues.append(
-            
-                "Warehouse data is stale: "
-                f"{load_age_minutes} minutes "
-                "since latest load"
-            
+            "Warehouse data is stale: "
+            f"{load_age_minutes} minutes "
+            "since latest load"
         )
+        degraded = True
 
-    status = "HEALTHY" if not issues else "DEGRADED"
+    if degraded:
+        status = "DEGRADED"
+    elif issues:
+        status = "WARNING"
+    else:
+        status = "HEALTHY"
 
     return {
         "status": status,
         "issues": issues,
         "load_age_minutes": load_age_minutes,
     }
-
 
 def record_metrics(
     conn,
@@ -418,7 +442,33 @@ def print_report(
     print()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Check RetailPulse pipeline health")
+
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=("Require exact cross-layer reconciliation " "with no live lag tolerance"),
+    )
+
+    parser.add_argument(
+        "--max-lag-rows",
+        type=int,
+        default=MAX_LAG_ROWS,
+        help=("Maximum tolerated live row lag " f"(default: {MAX_LAG_ROWS})"),
+    )
+
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
+    if args.max_lag_rows < 0:
+        raise ValueError(
+            "--max-lag-rows must be zero or greater"
+        )
+
     lake = collect_lake_metrics()
 
     with get_connection() as conn:
@@ -432,6 +482,8 @@ def main():
             fact_orders=db["fact_orders"],
             gold_order_count=db["gold_order_count"],
             latest_loaded_at=db["latest_loaded_at"],
+            max_lag_rows=args.max_lag_rows,
+            strict=args.strict,
         )
 
         record_metrics(
@@ -447,7 +499,7 @@ def main():
             health=health,
         )
 
-        if health["status"] != "HEALTHY":
+        if health["status"] == "DEGRADED":
             raise SystemExit(1)
 
 
