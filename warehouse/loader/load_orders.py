@@ -1,3 +1,4 @@
+import argparse
 import os
 from datetime import date
 from pathlib import Path
@@ -71,11 +72,15 @@ def get_watermark(
 
 def discover_partitions(
     watermark: tuple[date, int] | None,
+    start_partition: tuple[date, int] | None = None,
+    end_partition: tuple[date, int] | None = None,
 ) -> list[tuple[date, int, Path]]:
     partitions = []
 
     if not SILVER_ROOT.exists():
         return partitions
+
+    historical_mode = start_partition is not None or end_partition is not None
 
     for date_path in SILVER_ROOT.glob("ingestion_date=*"):
         if not date_path.is_dir():
@@ -89,14 +94,19 @@ def discover_partitions(
 
             partition_hour = int(hour_path.name.split("=", 1)[1])
 
-            if (
-                watermark is not None
-                and (
-                    partition_date,
-                    partition_hour,
-                )
-                < watermark
-            ):
+            partition = (
+                partition_date,
+                partition_hour,
+            )
+
+            if historical_mode:
+                if start_partition is not None and partition < start_partition:
+                    continue
+
+                if end_partition is not None and partition > end_partition:
+                    continue
+
+            elif watermark is not None and partition < watermark:
                 continue
 
             partitions.append(
@@ -136,6 +146,13 @@ def already_loaded(
     ).fetchone()
 
     return row is not None
+
+
+def should_skip_file(
+    is_loaded: bool,
+    replay: bool,
+) -> bool:
+    return is_loaded and not replay
 
 
 def load_file(
@@ -241,7 +258,88 @@ def update_watermark(
     )
 
 
+def should_advance_watermark(
+    historical_mode: bool,
+) -> bool:
+    return not historical_mode
+
+
+def parse_partition(
+    value: str,
+) -> tuple[date, int]:
+    try:
+        date_part, hour_part = value.split("T", 1)
+
+        partition_date = date.fromisoformat(date_part)
+
+        if len(hour_part) != 2 or not hour_part.isdigit():
+            raise ValueError
+
+        partition_hour = int(hour_part)
+
+        if not 0 <= partition_hour <= 23:
+            raise ValueError
+
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "partition must use YYYY-MM-DDTHH format"
+        ) from exc
+
+    return partition_date, partition_hour
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=("Load RetailPulse Silver orders " "into PostgreSQL")
+    )
+
+    parser.add_argument(
+        "--from",
+        dest="start_partition",
+        type=parse_partition,
+        help=("Historical range start " "in YYYY-MM-DDTHH format"),
+    )
+
+    parser.add_argument(
+        "--to",
+        dest="end_partition",
+        type=parse_partition,
+        help=("Historical range end " "in YYYY-MM-DDTHH format"),
+    )
+
+    parser.add_argument(
+        "--replay",
+        action="store_true",
+        help=("Reread already-loaded files inside " "the historical range"),
+    )
+
+    args = parser.parse_args()
+
+    historical_mode = args.start_partition is not None or args.end_partition is not None
+
+    if historical_mode and (args.start_partition is None or args.end_partition is None):
+        parser.error("--from and --to must be supplied together")
+
+    if (
+        args.start_partition is not None
+        and args.end_partition is not None
+        and args.start_partition > args.end_partition
+    ):
+        parser.error("--from must be earlier than or equal to --to")
+
+    if args.replay and not historical_mode:
+        parser.error("--replay requires --from and --to")
+
+    return args
+
+
 def main() -> None:
+    args = parse_args()
+
+    historical_mode = (
+        args.start_partition is not None
+    )
+
     discovered_files = 0
     skipped_files = 0
     loaded_files = 0
@@ -259,7 +357,28 @@ def main() -> None:
 
         print(f"Current watermark: {watermark}")
 
-        partitions = discover_partitions(watermark)
+        if args.replay:
+            mode = "REPLAY"
+        elif historical_mode:
+            mode = "BACKFILL"
+        else:
+            mode = "NORMAL"
+
+        print(f"Mode: {mode}")
+
+        if historical_mode:
+            print(
+                "Historical range: "
+                f"{args.start_partition} "
+                "to "
+                f"{args.end_partition}"
+            )
+
+        partitions = discover_partitions(
+            watermark=watermark,
+            start_partition=args.start_partition,
+            end_partition=args.end_partition,
+        )
 
         print(f"Eligible partitions: {len(partitions)}")
 
@@ -287,12 +406,20 @@ def main() -> None:
             for path in files:
                 file_id = path.as_posix()
 
-                if already_loaded(
+                is_loaded = already_loaded(
                     conn,
                     file_id,
+                )
+
+                if should_skip_file(
+                    is_loaded=is_loaded,
+                    replay=args.replay,
                 ):
                     skipped_files += 1
-                    print(f"SKIPPED: {file_id} (already loaded)")
+                    print(
+                        f"SKIPPED: {file_id} "
+                        "(already loaded)"
+                    )
                     continue
 
                 with conn.transaction():
@@ -322,12 +449,15 @@ def main() -> None:
                     f"duplicates={file_duplicate_rows})"
                 )
 
-            with conn.transaction():
-                update_watermark(
-                    conn,
-                    partition_date,
-                    partition_hour,
-                )
+            if should_advance_watermark(
+                historical_mode=historical_mode,
+            ):
+                with conn.transaction():
+                    update_watermark(
+                        conn,
+                        partition_date,
+                        partition_hour,
+                    )
 
     duplicate_rows = processed_rows - inserted_rows
 
