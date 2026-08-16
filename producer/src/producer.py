@@ -8,6 +8,7 @@ from kafka import KafkaProducer
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 TOPIC_NAME = "orders"
+SCHEMA_VERSION = 1
 
 
 def create_order_event() -> dict:
@@ -15,6 +16,7 @@ def create_order_event() -> dict:
     unit_price = round(random.uniform(5.0, 150.0), 2)
 
     return {
+        "schema_version": SCHEMA_VERSION,
         "event_id": str(uuid.uuid4()),
         "event_type": "order_created",
         "event_timestamp": datetime.now(timezone.utc).isoformat(),

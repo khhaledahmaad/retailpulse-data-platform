@@ -4,6 +4,7 @@ from pyspark.sql.functions import (
     current_timestamp,
     date_format,
     from_json,
+    lit,
     to_date,
     to_timestamp,
     when,
@@ -14,6 +15,7 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import (
     DoubleType,
     IntegerType,
+    MapType,
     StringType,
     StructField,
     StructType,
@@ -35,6 +37,11 @@ QUARANTINE_CHECKPOINT = f"{DATA_LAKE_PATH}/checkpoints/quarantine_orders"
 
 ORDER_SCHEMA = StructType(
     [
+        StructField(
+            "schema_version",
+            IntegerType(),
+            True,
+        ),
         StructField("event_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("event_timestamp", StringType(), True),
@@ -48,6 +55,24 @@ ORDER_SCHEMA = StructType(
     ]
 )
 
+RAW_EVENT_SCHEMA = MapType(
+    StringType(),
+    StringType(),
+)
+
+SUPPORTED_SCHEMA_VERSION = 1
+
+CONTRACT_REQUIRED_FIELDS = (
+    "event_id",
+    "event_type",
+    "event_timestamp",
+    "order_id",
+    "product_id",
+    "category",
+    "quantity",
+    "unit_price",
+    "currency",
+)
 
 def read_kafka_stream(spark: SparkSession) -> DataFrame:
     return (
@@ -75,9 +100,18 @@ def build_bronze(kafka_df: DataFrame) -> DataFrame:
     )
 
 
-def parse_orders(bronze_df: DataFrame) -> DataFrame:
+def parse_orders(
+    bronze_df: DataFrame,
+) -> DataFrame:
     return (
         bronze_df.withColumn(
+            "raw_event",
+            from_json(
+                col("raw_payload"),
+                RAW_EVENT_SCHEMA,
+            ),
+        )
+        .withColumn(
             "event",
             from_json(
                 col("raw_payload"),
@@ -92,6 +126,7 @@ def parse_orders(bronze_df: DataFrame) -> DataFrame:
             "kafka_timestamp",
             "ingested_at",
             "raw_payload",
+            "raw_event",
             "event.*",
         )
         .withColumn(
@@ -101,10 +136,48 @@ def parse_orders(bronze_df: DataFrame) -> DataFrame:
     )
 
 
+def add_contract_validation(
+    parsed_df: DataFrame,
+) -> DataFrame:
+    contract_error = (
+        when(
+            col("raw_event").isNull(),
+            "contract_invalid_payload",
+        )
+        .when(
+            col("raw_event")["schema_version"].isNull(),
+            "contract_missing_schema_version",
+        )
+        .when(
+            col("schema_version").isNull(),
+            "contract_invalid_schema_version",
+        )
+        .when(
+            col("schema_version") != SUPPORTED_SCHEMA_VERSION,
+            "contract_unsupported_schema_version",
+        )
+    )
+
+    for field in CONTRACT_REQUIRED_FIELDS:
+        contract_error = contract_error.when(
+            col("raw_event")[field].isNull(),
+            f"contract_missing_{field}",
+        )
+
+    return parsed_df.withColumn(
+        "contract_error",
+        contract_error.otherwise(None),
+    )
+
+
 def add_validation(parsed_df: DataFrame) -> DataFrame:
     return parsed_df.withColumn(
         "validation_error",
         when(
+            col("contract_error").isNotNull(),
+            lit(None).cast("string"),
+        )
+        .when(
             col("event_id").isNull(),
             "missing_or_invalid_event_id",
         )
@@ -138,7 +211,9 @@ def add_validation(parsed_df: DataFrame) -> DataFrame:
 
 def build_silver(validated_df: DataFrame) -> DataFrame:
     return (
-        validated_df.filter(col("validation_error").isNull())
+        validated_df.filter(
+            col("contract_error").isNull() & col("validation_error").isNull()
+        )
         .withColumn(
             "order_value",
             spark_round(
@@ -183,9 +258,15 @@ def build_silver(validated_df: DataFrame) -> DataFrame:
     )
 
 
-def build_quarantine(validated_df: DataFrame) -> DataFrame:
-    return validated_df.filter(col("validation_error").isNotNull()).select(
+def build_quarantine(
+    validated_df: DataFrame,
+) -> DataFrame:
+    return validated_df.filter(
+        col("contract_error").isNotNull() | col("validation_error").isNotNull()
+    ).select(
         "raw_payload",
+        "schema_version",
+        "contract_error",
         "validation_error",
         "topic",
         "partition",
@@ -203,8 +284,16 @@ def main() -> None:
     kafka_df = read_kafka_stream(spark)
 
     bronze_df = build_bronze(kafka_df)
+    
     parsed_df = parse_orders(bronze_df)
-    validated_df = add_validation(parsed_df)
+
+    contracted_df = add_contract_validation(
+        parsed_df
+    )
+
+    validated_df = add_validation(
+        contracted_df
+    )
 
     silver_df = build_silver(validated_df)
     quarantine_df = build_quarantine(validated_df)
