@@ -210,11 +210,45 @@ def count_spark_rows(root: Path) -> int:
     return total_rows
 
 
+def count_spark_unique_values(
+    root: Path,
+    column: str,
+) -> int:
+    committed_files = get_committed_files(root)
+
+    unique_values = set()
+
+    for path in committed_files:
+        if not path.exists():
+            raise RuntimeError("Spark-committed Parquet file is " f"missing: {path}")
+
+        table = pq.ParquetFile(path).read(columns=[column])
+
+        for value in table.column(column).to_pylist():
+            if value is not None:
+                unique_values.add(value)
+
+    return len(unique_values)
+
+
 def collect_lake_metrics():
+    bronze_rows = count_spark_rows(BRONZE_ROOT)
+
+    silver_rows = count_spark_rows(SILVER_ROOT)
+
+    silver_unique_events = count_spark_unique_values(
+        SILVER_ROOT,
+        "event_id",
+    )
+
+    quarantine_rows = count_spark_rows(QUARANTINE_ROOT)
+
     return {
-        "bronze_rows": count_spark_rows(BRONZE_ROOT),
-        "silver_rows": count_spark_rows(SILVER_ROOT),
-        "quarantine_rows": count_spark_rows(QUARANTINE_ROOT),
+        "bronze_rows": bronze_rows,
+        "silver_rows": silver_rows,
+        "silver_unique_events": (silver_unique_events),
+        "silver_duplicate_deliveries": (silver_rows - silver_unique_events),
+        "quarantine_rows": quarantine_rows,
     }
 
 
@@ -275,9 +309,13 @@ def evaluate_health(
     latest_loaded_at,
     max_lag_rows=MAX_LAG_ROWS,
     strict=False,
+    silver_unique_events=None,
 ):
     issues = []
     degraded = False
+
+    if silver_unique_events is None:
+        silver_unique_events = silver_rows
 
     bronze_expected = silver_rows + quarantine_rows
     bronze_gap = bronze_rows - bronze_expected
@@ -295,13 +333,13 @@ def evaluate_health(
         if strict or abs(bronze_gap) > max_lag_rows:
             degraded = True
 
-    silver_raw_gap = silver_rows - raw_orders
+    silver_raw_gap = silver_unique_events - raw_orders
 
     if silver_raw_gap != 0:
         issues.append(
-            "Silver does not reconcile with "
+            "Silver unique events do not reconcile with "
             "raw.orders: "
-            f"{silver_rows} != "
+            f"{silver_unique_events} != "
             f"{raw_orders} "
             f"(gap={silver_raw_gap})"
         )
@@ -353,6 +391,7 @@ def evaluate_health(
         "issues": issues,
         "load_age_minutes": load_age_minutes,
     }
+
 
 def record_metrics(
     conn,
@@ -419,6 +458,8 @@ def print_report(
 
     print(f"Bronze rows:       " f"{lake['bronze_rows']}")
     print(f"Silver rows:       " f"{lake['silver_rows']}")
+    print(f"Silver unique:     " f"{lake['silver_unique_events']}")
+    print(f"Silver duplicates: " f"{lake['silver_duplicate_deliveries']}")
     print(f"Quarantine rows:   " f"{lake['quarantine_rows']}")
     print(f"Raw orders:        " f"{db['raw_orders']}")
     print(f"Fact orders:       " f"{db['fact_orders']}")
@@ -477,6 +518,7 @@ def main():
         health = evaluate_health(
             bronze_rows=lake["bronze_rows"],
             silver_rows=lake["silver_rows"],
+            silver_unique_events=lake["silver_unique_events"],
             quarantine_rows=lake["quarantine_rows"],
             raw_orders=db["raw_orders"],
             fact_orders=db["fact_orders"],

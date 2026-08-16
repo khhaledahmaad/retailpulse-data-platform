@@ -197,3 +197,37 @@ def test_health_detects_missing_load_timestamp():
 
     assert result["status"] == "DEGRADED"
     assert any("No warehouse load timestamp" in issue for issue in result["issues"])
+
+
+def test_health_allows_duplicate_silver_delivery_when_business_state_reconciles():
+    latest_load = datetime.now(timezone.utc)
+    health = evaluate_health(
+        bronze_rows=653,
+        silver_rows=649,
+        silver_unique_events=648,
+        quarantine_rows=4,
+        raw_orders=648,
+        fact_orders=648,
+        gold_order_count=648,
+        latest_loaded_at=latest_load,
+        strict=True,
+    )
+
+    assert health["status"] == "HEALTHY"
+
+
+def test_health_detects_missing_logical_silver_event_in_raw():
+    latest_load = datetime.now(timezone.utc)
+    health = evaluate_health(
+        bronze_rows=653,
+        silver_rows=649,
+        silver_unique_events=649,
+        quarantine_rows=4,
+        raw_orders=648,
+        fact_orders=648,
+        gold_order_count=648,
+        latest_loaded_at=latest_load,
+        strict=True,
+    )
+
+    assert health["status"] == "DEGRADED"
