@@ -66,3 +66,44 @@ CREATE TABLE IF NOT EXISTS control.pipeline_metrics (
     status TEXT NOT NULL,
     details TEXT
 );
+
+CREATE TABLE IF NOT EXISTS control.event_reprocessing_log (
+    reprocessing_id BIGSERIAL PRIMARY KEY,
+
+    event_id UUID NOT NULL,
+    order_id TEXT,
+
+    original_contract_error TEXT,
+    original_validation_error TEXT,
+    original_kafka_timestamp TIMESTAMPTZ,
+
+    corrections JSONB NOT NULL,
+
+    action TEXT NOT NULL,
+    status TEXT NOT NULL,
+
+    republished_topic TEXT,
+    republished_partition INTEGER,
+    republished_offset BIGINT,
+
+    error_message TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL
+        DEFAULT NOW(),
+
+    CONSTRAINT event_reprocessing_action_check
+        CHECK (action IN ('DRY_RUN', 'PUBLISH')),
+
+    CONSTRAINT event_reprocessing_status_check
+        CHECK (
+            status IN (
+                'DRY_RUN',
+                'PUBLISHED',
+                'PUBLISH_FAILED'
+            )
+        )
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_event_reprocessing_log_event_id
+ON control.event_reprocessing_log (event_id);

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+import psycopg
 import pyarrow.parquet as pq
 from kafka import KafkaProducer
 from kafka.serializer import (
@@ -14,19 +15,47 @@ from kafka.serializer import (
 from spark.common.order_contract import validate_event_contract
 from spark.common.order_quality import validate_event_quality
 
+TOPIC_NAME = "orders"
+
+QUARANTINE_ROOT = Path("data_lake/quarantine/orders")
+
 KAFKA_BOOTSTRAP_SERVERS = os.getenv(
     "KAFKA_BOOTSTRAP_SERVERS",
     "localhost:9092",
 )
 
-TOPIC_NAME = "orders"
+POSTGRES_HOST = os.getenv(
+    "POSTGRES_HOST",
+    "localhost",
+)
 
-QUARANTINE_ROOT = Path("data_lake/quarantine/orders")
+POSTGRES_PORT = int(
+    os.getenv(
+        "POSTGRES_PORT",
+        "5432",
+    )
+)
+
+POSTGRES_DB = os.getenv(
+    "POSTGRES_DB",
+    "retailpulse",
+)
+
+POSTGRES_USER = os.getenv(
+    "POSTGRES_USER",
+    "retailpulse",
+)
+
+POSTGRES_PASSWORD = os.getenv(
+    "POSTGRES_PASSWORD",
+    "retailpulse",
+)
 
 PROTECTED_FIELDS = {
     "event_id",
     "event_timestamp",
 }
+
 
 def validate_repaired_contract(payload):
     error = validate_event_contract(payload)
@@ -172,6 +201,86 @@ def publish_repaired_event(
         producer.close()
 
 
+def get_connection():
+    return psycopg.connect(
+        host=POSTGRES_HOST,
+        port=POSTGRES_PORT,
+        dbname=POSTGRES_DB,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+    )
+
+
+def record_reprocessing_attempt(
+    conn,
+    *,
+    record,
+    corrections,
+    action,
+    status,
+    publish_metadata=None,
+    error_message=None,
+):
+    payload = record["payload"]
+
+    publish_metadata = publish_metadata or {}
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO control.event_reprocessing_log (
+                event_id,
+                order_id,
+                original_contract_error,
+                original_validation_error,
+                original_kafka_timestamp,
+                corrections,
+                action,
+                status,
+                republished_topic,
+                republished_partition,
+                republished_offset,
+                error_message
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s::jsonb,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+            RETURNING reprocessing_id
+            """,
+            (
+                payload["event_id"],
+                payload.get("order_id"),
+                record["contract_error"],
+                record["validation_error"],
+                record["kafka_timestamp"],
+                json.dumps(corrections),
+                action,
+                status,
+                publish_metadata.get("topic"),
+                publish_metadata.get("partition"),
+                publish_metadata.get("offset"),
+                error_message,
+            ),
+        )
+
+        reprocessing_id = cur.fetchone()[0]
+
+    conn.commit()
+
+    return reprocessing_id
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=("Inspect and repair a quarantined " "RetailPulse event")
@@ -254,18 +363,65 @@ def main():
     )
 
     if not args.publish:
+        with get_connection() as conn:
+            reprocessing_id = record_reprocessing_attempt(
+                conn,
+                record=record,
+                corrections=corrections,
+                action="DRY_RUN",
+                status="DRY_RUN",
+            )
+
         print()
         print("DRY RUN")
         print("Nothing published.")
+        print(
+            f"Audit record: {reprocessing_id}"
+        )
         return
 
-    metadata = publish_repaired_event(repaired)
+    try:
+        metadata = publish_repaired_event(
+            repaired
+        )
+
+    except Exception as exc:
+        with get_connection() as conn:
+            reprocessing_id = record_reprocessing_attempt(
+                conn,
+                record=record,
+                corrections=corrections,
+                action="PUBLISH",
+                status="PUBLISH_FAILED",
+                error_message=str(exc),
+            )
+
+        print()
+        print("PUBLISH FAILED")
+        print(
+            f"Audit record: {reprocessing_id}"
+        )
+
+        raise
+
+    with get_connection() as conn:
+        reprocessing_id = record_reprocessing_attempt(
+            conn,
+            record=record,
+            corrections=corrections,
+            action="PUBLISH",
+            status="PUBLISHED",
+            publish_metadata=metadata,
+        )
 
     print()
     print("PUBLISHED")
     print(f"Topic:     {metadata['topic']}")
     print(f"Partition: {metadata['partition']}")
     print(f"Offset:    {metadata['offset']}")
+    print(
+        f"Audit record: {reprocessing_id}"
+    )
 
 
 if __name__ == "__main__":

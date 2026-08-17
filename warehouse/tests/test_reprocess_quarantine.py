@@ -4,6 +4,7 @@ from warehouse.tools.reprocess_quarantine import (
     apply_corrections,
     parse_set_values,
     publish_repaired_event,
+    record_reprocessing_attempt,
     validate_repaired_contract,
     validate_repaired_quality,
 )
@@ -217,3 +218,193 @@ def test_publish_repaired_event_preserves_payload_and_identity():
         "partition": 1,
         "offset": 123,
     }
+
+
+def test_record_reprocessing_attempt_writes_audit_row():
+    captured = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params,
+        ):
+            captured["sql"] = sql
+            captured["params"] = params
+
+        def fetchone(self):
+            return (42,)
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            captured["committed"] = True
+
+    record = {
+        "payload": BASE_PAYLOAD,
+        "contract_error": None,
+        "validation_error": "invalid_quantity",
+        "kafka_timestamp": "2026-08-16T12:43:22+00:00",
+    }
+
+    reprocessing_id = record_reprocessing_attempt(
+        FakeConnection(),
+        record=record,
+        corrections={"quantity": 2},
+        action="PUBLISH",
+        status="PUBLISHED",
+        publish_metadata={
+            "topic": "orders",
+            "partition": 0,
+            "offset": 214,
+        },
+    )
+
+    assert reprocessing_id == 42
+    assert captured["committed"] is True
+
+    params = captured["params"]
+
+    assert params[0] == BASE_PAYLOAD["event_id"]
+    assert params[1] == BASE_PAYLOAD["order_id"]
+    assert params[3] == "invalid_quantity"
+    assert params[6] == "PUBLISH"
+    assert params[7] == "PUBLISHED"
+    assert params[8] == "orders"
+    assert params[9] == 0
+    assert params[10] == 214
+
+
+def test_record_reprocessing_attempt_supports_dry_run():
+    captured = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params,
+        ):
+            captured["params"] = params
+
+        def fetchone(self):
+            return (7,)
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    record = {
+        "payload": BASE_PAYLOAD,
+        "contract_error": None,
+        "validation_error": "invalid_quantity",
+        "kafka_timestamp": "2026-08-16T12:43:22+00:00",
+    }
+
+    reprocessing_id = record_reprocessing_attempt(
+        FakeConnection(),
+        record=record,
+        corrections={"quantity": 2},
+        action="DRY_RUN",
+        status="DRY_RUN",
+    )
+
+    assert reprocessing_id == 7
+
+    params = captured["params"]
+
+    assert params[6] == "DRY_RUN"
+    assert params[7] == "DRY_RUN"
+
+    assert params[8] is None
+    assert params[9] is None
+    assert params[10] is None
+
+
+def test_record_reprocessing_attempt_supports_publish_failure():
+    captured = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params,
+        ):
+            captured["params"] = params
+
+        def fetchone(self):
+            return (99,)
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            captured["committed"] = True
+
+    record = {
+        "payload": BASE_PAYLOAD,
+        "contract_error": None,
+        "validation_error": "invalid_quantity",
+        "kafka_timestamp": "2026-08-16T12:43:22+00:00",
+    }
+
+    result = record_reprocessing_attempt(
+        FakeConnection(),
+        record=record,
+        corrections={"quantity": 2},
+        action="PUBLISH",
+        status="PUBLISH_FAILED",
+        error_message="Kafka unavailable",
+    )
+
+    assert result == 99
+    assert captured["committed"] is True
+
+    params = captured["params"]
+
+    assert params[6] == "PUBLISH"
+    assert params[7] == "PUBLISH_FAILED"
+
+    assert params[8] is None
+    assert params[9] is None
+    assert params[10] is None
+
+    assert params[11] == "Kafka unavailable"
