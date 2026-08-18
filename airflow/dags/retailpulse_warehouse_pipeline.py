@@ -129,7 +129,7 @@ def retailpulse_warehouse_pipeline():
         task_id="check_pipeline_health",
         bash_command=(
             "cd /opt/retailpulse && "
-            "python warehouse/monitoring/check_pipeline_health.py"
+            "python -m warehouse.monitoring.check_pipeline_health"
         ),
     )
 

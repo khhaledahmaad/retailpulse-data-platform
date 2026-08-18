@@ -9,6 +9,11 @@ import psycopg
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
+from warehouse.monitoring.notifier import (
+    send_incident_alert,
+    send_recovery_alert,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(
@@ -469,15 +474,21 @@ def reconcile_incidents(
     with conn.cursor() as cur:
         cur.execute("""
             SELECT
+                incident_id,
                 incident_type
             FROM control.pipeline_incidents
             WHERE resolved_at IS NULL
-            """)
+        """)
 
-        currently_open = {row[0] for row in cur.fetchall()}
+        currently_open = {
+            incident_type: incident_id
+            for incident_id, incident_type in cur.fetchall()
+        }
+
+        open_types = set(currently_open)
 
         # Open newly detected incidents.
-        for incident_type in active_types - currently_open:
+        for incident_type in active_types - open_types:
             cur.execute(
                 """
                 INSERT INTO control.pipeline_incidents (
@@ -501,8 +512,25 @@ def reconcile_incidents(
                 ),
             )
 
+            send_incident_alert(
+                incident_type=incident_type,
+                severity=health["status"],
+                details=issue_details,
+            )
+
+            cur.execute(
+                """
+                UPDATE control.pipeline_incidents
+                SET alert_sent_at = NOW()
+                WHERE
+                    incident_type = %s
+                    AND resolved_at IS NULL
+                """,
+                (incident_type,),
+            )
+
         # Refresh incidents that are still active.
-        for incident_type in active_types & currently_open:
+        for incident_type in active_types & open_types:
             cur.execute(
                 """
                 UPDATE control.pipeline_incidents
@@ -521,7 +549,9 @@ def reconcile_incidents(
             )
 
         # Resolve incidents that disappeared.
-        for incident_type in currently_open - active_types:
+        for incident_type in open_types - active_types:
+            incident_id = currently_open[incident_type]
+
             cur.execute(
                 """
                 UPDATE control.pipeline_incidents
@@ -529,13 +559,28 @@ def reconcile_incidents(
                     resolved_at = NOW(),
                     resolved_by_airflow_run_id = %s
                 WHERE
-                    incident_type = %s
+                    incident_id = %s
                     AND resolved_at IS NULL
                 """,
                 (
                     airflow_run_id,
-                    incident_type,
+                    incident_id,
                 ),
+            )
+
+            send_recovery_alert(
+                incident_type=incident_type,
+            )
+
+            cur.execute(
+                """
+                UPDATE control.pipeline_incidents
+                SET recovery_sent_at = NOW()
+                WHERE incident_id = %s
+                AND resolved_at IS NOT NULL
+                AND recovery_sent_at IS NULL
+                """,
+                (incident_id,),
             )
 
     conn.commit()

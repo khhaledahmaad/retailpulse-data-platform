@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import warehouse.monitoring.check_pipeline_health as health_module
 from warehouse.monitoring.check_pipeline_health import (
     evaluate_health,
     reconcile_incidents,
@@ -332,7 +333,9 @@ def test_reconcile_incidents_updates_existing_incident():
             executed.append((sql, params))
 
         def fetchall(self):
-            return [("BRONZE_RECONCILIATION",)]
+            return [
+                (1, "BRONZE_RECONCILIATION")
+            ]
 
     class FakeConnection:
         def cursor(self):
@@ -396,7 +399,9 @@ def test_reconcile_incidents_resolves_recovered_incident():
             executed.append((sql, params))
 
         def fetchall(self):
-            return [("SILVER_RAW_RECONCILIATION",)]
+            return [
+                (2, "SILVER_RAW_RECONCILIATION")
+            ]
 
     class FakeConnection:
         def cursor(self):
@@ -422,6 +427,155 @@ def test_reconcile_incidents_resolves_recovered_incident():
     assert resolutions == [
         (
             "recovery_run_001",
-            "SILVER_RAW_RECONCILIATION",
+            2,
         )
+    ]
+
+
+def test_new_incident_sends_alert(monkeypatch):
+    executed = []
+    alerts = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    def fake_send_incident_alert(**kwargs):
+        alerts.append(kwargs)
+
+    monkeypatch.setattr(
+        health_module,
+        "send_incident_alert",
+        fake_send_incident_alert,
+    )
+
+    health = {
+        "status": "DEGRADED",
+        "issues": ["Silver is ahead of Raw"],
+        "incident_types": ["SILVER_RAW_RECONCILIATION"],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+    )
+
+    assert alerts == [
+        {
+            "incident_type": "SILVER_RAW_RECONCILIATION",
+            "severity": "DEGRADED",
+            "details": "Silver is ahead of Raw",
+        }
+    ]
+
+
+def test_existing_incident_does_not_resend_alert(monkeypatch):
+    alerts = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            pass
+
+        def fetchall(self):
+            return [(1, "BRONZE_RECONCILIATION")]
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    def fake_send_incident_alert(**kwargs):
+        alerts.append(kwargs)
+
+    monkeypatch.setattr(
+        health_module,
+        "send_incident_alert",
+        fake_send_incident_alert,
+    )
+
+    health = {
+        "status": "WARNING",
+        "issues": ["Bronze mismatch"],
+        "incident_types": ["BRONZE_RECONCILIATION"],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+    )
+
+    assert alerts == []
+
+
+def test_resolved_incident_sends_recovery_alert(monkeypatch):
+    recoveries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            pass
+
+        def fetchall(self):
+            return [(2, "SILVER_RAW_RECONCILIATION")]
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    def fake_send_recovery_alert(**kwargs):
+        recoveries.append(kwargs)
+
+    monkeypatch.setattr(
+        health_module,
+        "send_recovery_alert",
+        fake_send_recovery_alert,
+    )
+
+    health = {
+        "status": "HEALTHY",
+        "issues": [],
+        "incident_types": [],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+    )
+
+    assert recoveries == [
+        {
+            "incident_type": "SILVER_RAW_RECONCILIATION",
+        }
     ]

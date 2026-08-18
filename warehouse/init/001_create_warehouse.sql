@@ -183,6 +183,9 @@ CREATE TABLE IF NOT EXISTS control.pipeline_incidents (
 
     opened_by_airflow_run_id TEXT,
     resolved_by_airflow_run_id TEXT,
+    
+    alert_sent_at TIMESTAMPTZ,
+    recovery_sent_at TIMESTAMPTZ,
 
     CONSTRAINT pipeline_incidents_severity_check
         CHECK (
