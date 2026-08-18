@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta, timezone
 
-from warehouse.monitoring.check_pipeline_health import evaluate_health
+from warehouse.monitoring.check_pipeline_health import (
+    evaluate_health,
+    reconcile_incidents,
+)
 
 
 def test_health_is_healthy_when_all_layers_reconcile():
@@ -19,6 +22,7 @@ def test_health_is_healthy_when_all_layers_reconcile():
 
     assert result["status"] == "HEALTHY"
     assert result["issues"] == []
+    assert result["incident_types"] == []
 
 
 def test_health_warns_when_bronze_gap_is_within_tolerance():
@@ -36,6 +40,7 @@ def test_health_warns_when_bronze_gap_is_within_tolerance():
     )
 
     assert result["status"] == "WARNING"
+    assert result["incident_types"] == ["BRONZE_RECONCILIATION"]
     assert any("Bronze" in issue for issue in result["issues"])
 
 
@@ -54,6 +59,7 @@ def test_health_degrades_when_bronze_gap_exceeds_tolerance():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["BRONZE_RECONCILIATION"]
     assert any("Bronze" in issue for issue in result["issues"])
 
 
@@ -72,6 +78,7 @@ def test_health_warns_when_silver_leads_raw_within_tolerance():
     )
 
     assert result["status"] == "WARNING"
+    assert result["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
     assert any("Silver" in issue for issue in result["issues"])
 
 
@@ -90,6 +97,7 @@ def test_health_degrades_when_silver_raw_gap_exceeds_tolerance():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
     assert any("Silver" in issue for issue in result["issues"])
 
 
@@ -108,6 +116,7 @@ def test_health_degrades_when_raw_is_ahead_of_silver():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
     assert any("Silver" in issue for issue in result["issues"])
 
 
@@ -127,6 +136,7 @@ def test_strict_health_requires_exact_reconciliation():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["BRONZE_RECONCILIATION"]
 
 
 def test_health_detects_raw_fact_mismatch():
@@ -144,6 +154,7 @@ def test_health_detects_raw_fact_mismatch():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["RAW_FACT_RECONCILIATION"]
     assert any("raw.orders does not reconcile" in issue for issue in result["issues"])
 
 
@@ -162,6 +173,7 @@ def test_health_detects_fact_gold_mismatch():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["FACT_GOLD_RECONCILIATION"]
     assert any("fct_orders does not reconcile" in issue for issue in result["issues"])
 
 
@@ -180,6 +192,7 @@ def test_health_detects_stale_warehouse_data():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["WAREHOUSE_FRESHNESS"]
     assert any("Warehouse data is stale" in issue for issue in result["issues"])
 
 
@@ -196,6 +209,7 @@ def test_health_detects_missing_load_timestamp():
     )
 
     assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["WAREHOUSE_FRESHNESS"]
     assert any("No warehouse load timestamp" in issue for issue in result["issues"])
 
 
@@ -214,6 +228,7 @@ def test_health_allows_duplicate_silver_delivery_when_business_state_reconciles(
     )
 
     assert health["status"] == "HEALTHY"
+    assert health["incident_types"] == []
 
 
 def test_health_detects_missing_logical_silver_event_in_raw():
@@ -231,3 +246,182 @@ def test_health_detects_missing_logical_silver_event_in_raw():
     )
 
     assert health["status"] == "DEGRADED"
+    assert health["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
+
+
+def test_reconcile_incidents_opens_new_incident():
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params=None,
+        ):
+            executed.append((sql, params))
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            executed.append(("COMMIT", None))
+
+    health = {
+        "status": "DEGRADED",
+        "issues": ["raw.orders does not reconcile with fct_orders: 127 != 126"],
+        "incident_types": ["RAW_FACT_RECONCILIATION"],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+        airflow_run_id="test_run_001",
+    )
+
+    params = [
+        params
+        for sql, params in executed
+        if "INSERT INTO control.pipeline_incidents" in sql
+    ]
+
+    assert params == [
+        (
+            "RAW_FACT_RECONCILIATION",
+            "DEGRADED",
+            "raw.orders does not reconcile with fct_orders: 127 != 126",
+            "test_run_001",
+        )
+    ]
+
+
+def test_reconcile_incidents_updates_existing_incident():
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params=None,
+        ):
+            executed.append((sql, params))
+
+        def fetchall(self):
+            return [("BRONZE_RECONCILIATION",)]
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    health = {
+        "status": "WARNING",
+        "issues": ["Bronze does not reconcile"],
+        "incident_types": ["BRONZE_RECONCILIATION"],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+    )
+
+    inserts = [
+        sql for sql, _ in executed if "INSERT INTO control.pipeline_incidents" in sql
+    ]
+
+    updates = [
+        params
+        for sql, params in executed
+        if ("UPDATE control.pipeline_incidents" in sql and "severity = %s" in sql)
+    ]
+
+    assert inserts == []
+
+    assert updates == [
+        (
+            "WARNING",
+            "Bronze does not reconcile",
+            "BRONZE_RECONCILIATION",
+        )
+    ]
+
+
+def test_reconcile_incidents_resolves_recovered_incident():
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            return False
+
+        def execute(
+            self,
+            sql,
+            params=None,
+        ):
+            executed.append((sql, params))
+
+        def fetchall(self):
+            return [("SILVER_RAW_RECONCILIATION",)]
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    health = {
+        "status": "HEALTHY",
+        "issues": [],
+        "incident_types": [],
+    }
+
+    reconcile_incidents(
+        FakeConnection(),
+        health,
+        airflow_run_id="recovery_run_001",
+    )
+
+    resolutions = [params for sql, params in executed if "resolved_at = NOW()" in sql]
+
+    assert resolutions == [
+        (
+            "recovery_run_001",
+            "SILVER_RAW_RECONCILIATION",
+        )
+    ]

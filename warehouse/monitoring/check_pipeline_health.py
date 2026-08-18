@@ -312,6 +312,7 @@ def evaluate_health(
     silver_unique_events=None,
 ):
     issues = []
+    incident_types = []
     degraded = False
 
     if silver_unique_events is None:
@@ -329,6 +330,7 @@ def evaluate_health(
             f"{quarantine_rows} "
             f"(gap={bronze_gap})"
         )
+        incident_types.append("BRONZE_RECONCILIATION")
 
         if strict or abs(bronze_gap) > max_lag_rows:
             degraded = True
@@ -343,6 +345,7 @@ def evaluate_health(
             f"{raw_orders} "
             f"(gap={silver_raw_gap})"
         )
+        incident_types.append("SILVER_RAW_RECONCILIATION")
 
         if strict or silver_raw_gap < 0 or silver_raw_gap > max_lag_rows:
             degraded = True
@@ -354,6 +357,8 @@ def evaluate_health(
             f"{raw_orders} != "
             f"{fact_orders}"
         )
+        incident_types.append("RAW_FACT_RECONCILIATION")
+
         degraded = True
 
     if fact_orders != gold_order_count:
@@ -363,12 +368,14 @@ def evaluate_health(
             f"{fact_orders} != "
             f"{gold_order_count}"
         )
+        incident_types.append("FACT_GOLD_RECONCILIATION")
         degraded = True
 
     load_age_minutes = calculate_load_age_minutes(latest_loaded_at)
 
     if latest_loaded_at is None:
         issues.append("No warehouse load timestamp available")
+        incident_types.append("WAREHOUSE_FRESHNESS")
         degraded = True
 
     elif load_age_minutes > MAX_LOAD_AGE_MINUTES:
@@ -377,6 +384,7 @@ def evaluate_health(
             f"{load_age_minutes} minutes "
             "since latest load"
         )
+        incident_types.append("WAREHOUSE_FRESHNESS")
         degraded = True
 
     if degraded:
@@ -389,6 +397,7 @@ def evaluate_health(
     return {
         "status": status,
         "issues": issues,
+        "incident_types": incident_types,
         "load_age_minutes": load_age_minutes,
     }
 
@@ -443,6 +452,91 @@ def record_metrics(
                 details,
             ),
         )
+
+    conn.commit()
+
+
+def reconcile_incidents(
+    conn,
+    health,
+    *,
+    airflow_run_id=None,
+) -> None:
+    active_types = set(health["incident_types"])
+
+    issue_details = "; ".join(health["issues"])
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                incident_type
+            FROM control.pipeline_incidents
+            WHERE resolved_at IS NULL
+            """)
+
+        currently_open = {row[0] for row in cur.fetchall()}
+
+        # Open newly detected incidents.
+        for incident_type in active_types - currently_open:
+            cur.execute(
+                """
+                INSERT INTO control.pipeline_incidents (
+                    incident_type,
+                    severity,
+                    details,
+                    opened_by_airflow_run_id
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    incident_type,
+                    health["status"],
+                    issue_details,
+                    airflow_run_id,
+                ),
+            )
+
+        # Refresh incidents that are still active.
+        for incident_type in active_types & currently_open:
+            cur.execute(
+                """
+                UPDATE control.pipeline_incidents
+                SET
+                    severity = %s,
+                    details = %s
+                WHERE
+                    incident_type = %s
+                    AND resolved_at IS NULL
+                """,
+                (
+                    health["status"],
+                    issue_details,
+                    incident_type,
+                ),
+            )
+
+        # Resolve incidents that disappeared.
+        for incident_type in currently_open - active_types:
+            cur.execute(
+                """
+                UPDATE control.pipeline_incidents
+                SET
+                    resolved_at = NOW(),
+                    resolved_by_airflow_run_id = %s
+                WHERE
+                    incident_type = %s
+                    AND resolved_at IS NULL
+                """,
+                (
+                    airflow_run_id,
+                    incident_type,
+                ),
+            )
 
     conn.commit()
 
@@ -532,6 +626,11 @@ def main():
             conn=conn,
             lake=lake,
             db=db,
+            health=health,
+        )
+
+        reconcile_incidents(
+            conn=conn,
             health=health,
         )
 

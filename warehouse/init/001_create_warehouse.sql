@@ -168,3 +168,32 @@ CREATE TABLE IF NOT EXISTS control.pipeline_runs (
 CREATE INDEX IF NOT EXISTS
     idx_pipeline_runs_started_at
 ON control.pipeline_runs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS control.pipeline_incidents (
+    incident_id BIGSERIAL PRIMARY KEY,
+
+    incident_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+
+    details TEXT NOT NULL,
+
+    opened_at TIMESTAMPTZ NOT NULL
+        DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+
+    opened_by_airflow_run_id TEXT,
+    resolved_by_airflow_run_id TEXT,
+
+    CONSTRAINT pipeline_incidents_severity_check
+        CHECK (
+            severity IN (
+                'WARNING',
+                'DEGRADED'
+            )
+        )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_pipeline_incidents_open_type
+ON control.pipeline_incidents (incident_type)
+WHERE resolved_at IS NULL;
