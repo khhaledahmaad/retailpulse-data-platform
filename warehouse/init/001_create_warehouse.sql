@@ -107,3 +107,64 @@ CREATE TABLE IF NOT EXISTS control.event_reprocessing_log (
 CREATE INDEX IF NOT EXISTS
     idx_event_reprocessing_log_event_id
 ON control.event_reprocessing_log (event_id);
+
+CREATE TABLE IF NOT EXISTS control.pipeline_runs (
+    pipeline_run_id BIGSERIAL PRIMARY KEY,
+
+    airflow_run_id TEXT NOT NULL UNIQUE,
+
+    started_at TIMESTAMPTZ NOT NULL
+        DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+
+    loader_files_discovered INTEGER,
+    loader_files_skipped INTEGER,
+    loader_files_loaded INTEGER,
+
+    loader_rows_processed INTEGER,
+    loader_rows_inserted INTEGER,
+    loader_duplicates INTEGER,
+
+    dbt_status TEXT,
+    health_status TEXT,
+
+    raw_orders BIGINT,
+    latest_load TIMESTAMPTZ,
+
+    status TEXT NOT NULL
+        DEFAULT 'RUNNING',
+
+    error_message TEXT,
+
+    CONSTRAINT pipeline_runs_status_check
+        CHECK (
+            status IN (
+                'RUNNING',
+                'SUCCEEDED',
+                'FAILED'
+            )
+        ),
+
+    CONSTRAINT pipeline_runs_dbt_status_check
+        CHECK (
+            dbt_status IS NULL
+            OR dbt_status IN (
+                'SUCCEEDED',
+                'FAILED'
+            )
+        ),
+
+    CONSTRAINT pipeline_runs_health_status_check
+        CHECK (
+            health_status IS NULL
+            OR health_status IN (
+                'HEALTHY',
+                'WARNING',
+                'DEGRADED'
+            )
+        )
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_pipeline_runs_started_at
+ON control.pipeline_runs (started_at DESC);

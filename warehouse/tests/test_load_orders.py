@@ -1,6 +1,7 @@
 from datetime import date
 
 from warehouse.loader import load_orders
+from warehouse.loader.load_orders import update_pipeline_run_loader_metrics
 
 
 def test_discover_partitions_returns_empty_when_root_missing(
@@ -140,3 +141,33 @@ def test_historical_mode_does_not_advance_watermark():
     assert load_orders.should_advance_watermark(historical_mode=False)
 
     assert not load_orders.should_advance_watermark(historical_mode=True)
+
+
+def test_update_pipeline_run_loader_metrics():
+    captured = {}
+
+    class FakeConnection:
+        def execute(self, sql, params):
+            captured["sql"] = sql
+            captured["params"] = params
+
+    update_pipeline_run_loader_metrics(
+        FakeConnection(),
+        airflow_run_id="scheduled__2026-08-18T12:00:00+00:00",
+        discovered_files=12,
+        skipped_files=5,
+        loaded_files=7,
+        processed_rows=10,
+        inserted_rows=7,
+        duplicate_rows=3,
+    )
+
+    assert captured["params"] == (
+        12,  # discovered
+        5,  # skipped
+        7,  # loaded
+        10,  # processed
+        7,  # inserted
+        3,  # duplicates
+        "scheduled__2026-08-18T12:00:00+00:00",
+    )

@@ -313,6 +313,11 @@ def parse_args():
         help=("Reread already-loaded files inside " "the historical range"),
     )
 
+    parser.add_argument(
+        "--airflow-run-id",
+        help="Airflow DAG run_id used for pipeline-run lineage",
+    )
+
     args = parser.parse_args()
 
     historical_mode = args.start_partition is not None or args.end_partition is not None
@@ -333,6 +338,41 @@ def parse_args():
     return args
 
 
+def update_pipeline_run_loader_metrics(
+    conn: psycopg.Connection,
+    *,
+    airflow_run_id: str,
+    discovered_files: int,
+    skipped_files: int,
+    loaded_files: int,
+    processed_rows: int,
+    inserted_rows: int,
+    duplicate_rows: int,
+) -> None:
+    conn.execute(
+        """
+        UPDATE control.pipeline_runs
+        SET
+            loader_files_discovered = %s,
+            loader_files_skipped = %s,
+            loader_files_loaded = %s,
+            loader_rows_processed = %s,
+            loader_rows_inserted = %s,
+            loader_duplicates = %s
+        WHERE airflow_run_id = %s
+        """,
+        (
+            discovered_files,
+            skipped_files,
+            loaded_files,
+            processed_rows,
+            inserted_rows,
+            duplicate_rows,
+            airflow_run_id,
+        ),
+    )
+
+
 def main() -> None:
     args = parse_args()
 
@@ -345,6 +385,7 @@ def main() -> None:
     loaded_files = 0
     processed_rows = 0
     inserted_rows = 0
+    duplicate_rows = 0
 
     with psycopg.connect(
         host=DB_HOST,
@@ -384,6 +425,19 @@ def main() -> None:
 
         if not partitions:
             print("No eligible Silver partitions.")
+
+            if args.airflow_run_id is not None:
+                update_pipeline_run_loader_metrics(
+                    conn,
+                    airflow_run_id=args.airflow_run_id,
+                    discovered_files=0,
+                    skipped_files=0,
+                    loaded_files=0,
+                    processed_rows=0,
+                    inserted_rows=0,
+                    duplicate_rows=0,
+                )
+
             return
 
         for (
@@ -459,7 +513,19 @@ def main() -> None:
                         partition_hour,
                     )
 
-    duplicate_rows = processed_rows - inserted_rows
+        duplicate_rows = processed_rows - inserted_rows
+
+        if args.airflow_run_id is not None:
+            update_pipeline_run_loader_metrics(
+                conn,
+                airflow_run_id=args.airflow_run_id,
+                discovered_files=discovered_files,
+                skipped_files=skipped_files,
+                loaded_files=loaded_files,
+                processed_rows=processed_rows,
+                inserted_rows=inserted_rows,
+                duplicate_rows=duplicate_rows,
+            )
 
     print()
     print("Load complete.")
