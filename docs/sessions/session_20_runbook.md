@@ -275,6 +275,74 @@ Total test count becomes:
 47 tests
 ```
 
+
+### 10A. CI isolation fix
+
+GitHub Actions initially failed two existing pipeline-health lifecycle tests even though they passed locally.
+
+The failing tests were:
+
+```text
+test_reconcile_incidents_opens_new_incident
+test_reconcile_incidents_resolves_recovered_incident
+```
+
+Root cause:
+
+```text
+local pytest
+→ project .env available
+→ accidental real notifier call could resolve Mailtrap variables
+
+GitHub Actions
+→ no local .env
+→ real notifier call attempted
+→ KeyError: 'ALERT_EMAIL_FROM'
+```
+
+The tests were meant to validate incident lifecycle behavior, not SMTP delivery, so they should not depend on Mailtrap or any external service.
+
+Fix the existing lifecycle tests by monkeypatching the notifier functions:
+
+```python
+monkeypatch.setattr(
+    health_module,
+    "send_incident_alert",
+    lambda **kwargs: None,
+)
+```
+
+and:
+
+```python
+monkeypatch.setattr(
+    health_module,
+    "send_recovery_alert",
+    lambda **kwargs: None,
+)
+```
+
+Testing boundary after the fix:
+
+```text
+unit tests
+→ incident lifecycle and notification-call behavior
+→ external SMTP mocked
+
+Mailtrap smoke/E2E test
+→ real SMTP behavior
+→ tested separately
+```
+
+Final CI result:
+
+```text
+47 passed locally
+47 passed in GitHub Actions
+```
+
+No Mailtrap credentials are required in GitHub Actions for the unit-test suite.
+
 ## 11. Standardize health checker invocation
 
 After adding:
@@ -528,7 +596,8 @@ git status
 Observed:
 
 ```text
-47 tests passed
+47 tests passed locally
+47 tests passed in GitHub Actions
 Ruff clean
 strict health HEALTHY
 ```
@@ -549,6 +618,8 @@ strict health HEALTHY
 [x] historical incidents protected
 [x] existing lifecycle tests updated
 [x] three notification tests added
+[x] lifecycle tests isolated from external SMTP
+[x] GitHub Actions passes without Mailtrap credentials
 [x] Airflow health task uses module execution
 [x] Airflow containers receive Mailtrap/email environment variables
 [x] Airflow alert/recovery email delivery proven after container recreation

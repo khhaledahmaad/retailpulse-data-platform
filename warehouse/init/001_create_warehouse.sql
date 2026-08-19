@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS control.pipeline_metrics (
 
     bronze_rows BIGINT,
     silver_rows BIGINT,
+    silver_unique_events BIGINT,
     quarantine_rows BIGINT,
 
     raw_orders BIGINT,

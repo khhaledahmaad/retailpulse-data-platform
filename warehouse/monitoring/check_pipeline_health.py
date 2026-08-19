@@ -425,6 +425,7 @@ def record_metrics(
             INSERT INTO control.pipeline_metrics (
                 bronze_rows,
                 silver_rows,
+                silver_unique_events,
                 quarantine_rows,
                 raw_orders,
                 fact_orders,
@@ -442,12 +443,14 @@ def record_metrics(
                 %s,
                 %s,
                 %s,
+                %s,
                 %s
             )
             """,
             (
                 lake["bronze_rows"],
                 lake["silver_rows"],
+                lake["silver_unique_events"],
                 lake["quarantine_rows"],
                 db["raw_orders"],
                 db["fact_orders"],
