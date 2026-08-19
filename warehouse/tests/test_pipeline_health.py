@@ -250,7 +250,9 @@ def test_health_detects_missing_logical_silver_event_in_raw():
     assert health["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
 
 
-def test_reconcile_incidents_opens_new_incident():
+def test_reconcile_incidents_opens_new_incident(
+    monkeypatch,
+):
     executed = []
 
     class FakeCursor:
@@ -287,6 +289,12 @@ def test_reconcile_incidents_opens_new_incident():
         "issues": ["raw.orders does not reconcile with fct_orders: 127 != 126"],
         "incident_types": ["RAW_FACT_RECONCILIATION"],
     }
+
+    monkeypatch.setattr(
+        health_module,
+        "send_incident_alert",
+        lambda **kwargs: None,
+    )
 
     reconcile_incidents(
         FakeConnection(),
@@ -376,7 +384,9 @@ def test_reconcile_incidents_updates_existing_incident():
     ]
 
 
-def test_reconcile_incidents_resolves_recovered_incident():
+def test_reconcile_incidents_resolves_recovered_incident(
+    monkeypatch,
+):
     executed = []
 
     class FakeCursor:
@@ -415,6 +425,12 @@ def test_reconcile_incidents_resolves_recovered_incident():
         "issues": [],
         "incident_types": [],
     }
+
+    monkeypatch.setattr(
+        health_module,
+        "send_recovery_alert",
+        lambda **kwargs: None,
+    )
 
     reconcile_incidents(
         FakeConnection(),
