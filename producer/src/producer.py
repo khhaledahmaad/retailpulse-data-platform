@@ -20,7 +20,7 @@ def create_order_event() -> dict:
         "event_id": str(uuid.uuid4()),
         "event_type": "order_created",
         "event_timestamp": datetime.now(timezone.utc).isoformat(),
-        "order_id": f"ORD-{random.randint(100000, 999999)}",
+        "order_id": str(uuid.uuid4()),
         "customer_id": f"CUS-{random.randint(1000, 9999)}",
         "product_id": f"PRD-{random.randint(100, 999)}",
         "category": random.choice(

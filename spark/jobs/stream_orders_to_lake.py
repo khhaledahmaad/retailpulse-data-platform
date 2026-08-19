@@ -4,9 +4,11 @@ from pyspark.sql.functions import (
     current_timestamp,
     date_format,
     from_json,
+    length,
     lit,
     to_date,
-    to_timestamp,
+    trim,
+    try_to_timestamp,
     when,
 )
 from pyspark.sql.functions import (
@@ -19,6 +21,12 @@ from pyspark.sql.types import (
     StringType,
     StructField,
     StructType,
+)
+
+from spark.common.order_quality import (
+    SUPPORTED_CATEGORIES,
+    SUPPORTED_CURRENCIES,
+    SUPPORTED_EVENT_TYPES,
 )
 
 KAFKA_BOOTSTRAP_SERVERS = "kafka:29092"
@@ -131,7 +139,7 @@ def parse_orders(
         )
         .withColumn(
             "event_timestamp",
-            to_timestamp("event_timestamp"),
+            try_to_timestamp("event_timestamp"),
         )
     )
 
@@ -170,7 +178,9 @@ def add_contract_validation(
     )
 
 
-def add_validation(parsed_df: DataFrame) -> DataFrame:
+def add_validation(
+    parsed_df: DataFrame,
+) -> DataFrame:
     return parsed_df.withColumn(
         "validation_error",
         when(
@@ -178,16 +188,21 @@ def add_validation(parsed_df: DataFrame) -> DataFrame:
             lit(None).cast("string"),
         )
         .when(
-            col("event_id").isNull(),
+            col("event_id").isNull() | (length(trim(col("event_id"))) == 0),
             "missing_or_invalid_event_id",
         )
         .when(
-            col("order_id").isNull(),
+            col("order_id").isNull() | (length(trim(col("order_id"))) == 0),
             "missing_order_id",
         )
         .when(
-            col("product_id").isNull(),
+            col("product_id").isNull() | (length(trim(col("product_id"))) == 0),
             "missing_product_id",
+        )
+        .when(
+            col("event_type").isNull()
+            | ~col("event_type").isin(*SUPPORTED_EVENT_TYPES),
+            "unsupported_event_type",
         )
         .when(
             col("event_timestamp").isNull(),
@@ -198,12 +213,16 @@ def add_validation(parsed_df: DataFrame) -> DataFrame:
             "invalid_quantity",
         )
         .when(
-            col("unit_price").isNull() | (col("unit_price") < 0),
+            col("unit_price").isNull() | (col("unit_price") <= 0),
             "invalid_unit_price",
         )
         .when(
-            col("currency") != "GBP",
+            col("currency").isNull() | ~col("currency").isin(*SUPPORTED_CURRENCIES),
             "unsupported_currency",
+        )
+        .when(
+            col("category").isNull() | ~col("category").isin(*SUPPORTED_CATEGORIES),
+            "unsupported_category",
         )
         .otherwise(None),
     )
