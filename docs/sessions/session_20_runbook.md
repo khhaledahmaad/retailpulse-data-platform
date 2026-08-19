@@ -329,6 +329,104 @@ bash_command=(
 ),
 ```
 
+
+## 12A. Fix Airflow container Mailtrap environment
+
+After the module-invocation fix, Airflow successfully imported the notifier but failed during recovery email delivery with:
+
+```text
+KeyError: 'ALERT_EMAIL_FROM'
+```
+
+The health task was running correctly as:
+
+```text
+cd /opt/retailpulse && python -m warehouse.monitoring.check_pipeline_health
+```
+
+but the Airflow container did not have the Mailtrap/email environment variables that were available to local Windows Python.
+
+Root cause:
+
+```text
+local project .env
+→ available to local Python
+
+Airflow container environment
+→ Mailtrap variables missing
+```
+
+Inject the Mailtrap/email settings into the common Airflow environment in `docker-compose.yml`:
+
+```yaml
+MAILTRAP_HOST: ${MAILTRAP_HOST}
+MAILTRAP_PORT: ${MAILTRAP_PORT}
+MAILTRAP_USERNAME: ${MAILTRAP_USERNAME}
+MAILTRAP_PASSWORD: ${MAILTRAP_PASSWORD}
+ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM}
+ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+```
+
+Docker Compose resolves `${...}` values from the project `.env` and passes them into the Airflow containers.
+
+Do not hard-code credentials in `docker-compose.yml`.
+
+Recreate the affected Airflow containers so they receive the new environment variables:
+
+```cmd
+docker compose up -d --force-recreate airflow-api-server airflow-scheduler
+```
+
+Or recreate the full Compose stack if preferred:
+
+```cmd
+docker compose up -d --force-recreate
+```
+
+`--force-recreate` recreates containers but does not delete named volumes or persisted database data.
+
+Avoid:
+
+```cmd
+docker compose down -v
+```
+
+because `-v` removes Compose-managed volumes.
+
+Verify the API-server environment without exposing secrets:
+
+```cmd
+docker compose exec airflow-api-server python -c "import os; print(os.getenv('MAILTRAP_HOST')); print(os.getenv('MAILTRAP_PORT')); print(os.getenv('ALERT_EMAIL_FROM')); print(os.getenv('ALERT_EMAIL_TO')); print(bool(os.getenv('MAILTRAP_USERNAME'))); print(bool(os.getenv('MAILTRAP_PASSWORD')))"
+```
+
+Expected shape:
+
+```text
+<mailtrap host>
+2525
+data.admin@retailpulse.com
+data.team@retailpulse.com
+True
+True
+```
+
+Verify the scheduler as well:
+
+```cmd
+docker compose exec airflow-scheduler python -c "import os; print(os.getenv('ALERT_EMAIL_FROM')); print(bool(os.getenv('MAILTRAP_PASSWORD')))"
+```
+
+Expected:
+
+```text
+data.admin@retailpulse.com
+True
+```
+
+After recreating the Airflow services, alert/recovery email delivery from the Airflow `check_pipeline_health` task succeeded.
+
+This closes the environment parity gap between local execution and Airflow execution.
+
 ## 13. Airflow DAG pause/unpause commands
 
 Keep these commands for operational testing.
@@ -452,6 +550,8 @@ strict health HEALTHY
 [x] existing lifecycle tests updated
 [x] three notification tests added
 [x] Airflow health task uses module execution
+[x] Airflow containers receive Mailtrap/email environment variables
+[x] Airflow alert/recovery email delivery proven after container recreation
 [x] local health command standardized to python -m
 [x] multiple simultaneous incident alerts proven
 [x] repeated active incidents do not spam
@@ -505,6 +605,7 @@ Expected core Session 20 files:
 
 ```text
 airflow/dags/retailpulse_warehouse_pipeline.py
+docker-compose.yml
 warehouse/init/001_create_warehouse.sql
 warehouse/monitoring/check_pipeline_health.py
 warehouse/monitoring/notifier.py
@@ -516,6 +617,7 @@ Stage:
 
 ```cmd
 git add airflow/dags/retailpulse_warehouse_pipeline.py
+git add docker-compose.yml
 git add warehouse/init/001_create_warehouse.sql
 git add warehouse/monitoring/check_pipeline_health.py
 git add warehouse/monitoring/notifier.py

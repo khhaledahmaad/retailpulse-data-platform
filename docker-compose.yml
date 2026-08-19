@@ -30,6 +30,14 @@ x-airflow-common: &airflow-common
     MAX_LAG_ROWS: "${MAX_LAG_ROWS:-60}"
     MAX_LOAD_AGE_MINUTES: "${MAX_LOAD_AGE_MINUTES:-2880}"
 
+    # Email configuration for alerts
+    MAILTRAP_HOST: ${MAILTRAP_HOST}
+    MAILTRAP_PORT: ${MAILTRAP_PORT}
+    MAILTRAP_USERNAME: ${MAILTRAP_USERNAME}
+    MAILTRAP_PASSWORD: ${MAILTRAP_PASSWORD}
+    ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM}
+    ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
