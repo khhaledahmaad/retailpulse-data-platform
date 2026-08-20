@@ -41,7 +41,7 @@ def test_health_warns_when_bronze_gap_is_within_tolerance():
     )
 
     assert result["status"] == "WARNING"
-    assert result["incident_types"] == ["BRONZE_RECONCILIATION"]
+    assert result["incident_types"] == []
     assert any("Bronze" in issue for issue in result["issues"])
 
 
@@ -79,7 +79,7 @@ def test_health_warns_when_silver_leads_raw_within_tolerance():
     )
 
     assert result["status"] == "WARNING"
-    assert result["incident_types"] == ["SILVER_RAW_RECONCILIATION"]
+    assert result["incident_types"] == []
     assert any("Silver" in issue for issue in result["issues"])
 
 
@@ -595,3 +595,61 @@ def test_resolved_incident_sends_recovery_alert(monkeypatch):
             "incident_type": "SILVER_RAW_RECONCILIATION",
         }
     ]
+
+
+def test_collect_lake_metrics_uses_one_silver_snapshot(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_get_committed_files(root):
+        calls.append(root)
+        return []
+
+    monkeypatch.setattr(
+        health_module,
+        "get_committed_files",
+        fake_get_committed_files,
+    )
+
+    health_module.collect_lake_metrics()
+
+    assert calls.count(health_module.SILVER_ROOT) == 1
+
+
+def test_health_uses_custom_freshness_threshold():
+    stale_load = datetime.now(timezone.utc) - timedelta(minutes=121)
+
+    result = evaluate_health(
+        bronze_rows=127,
+        silver_rows=127,
+        quarantine_rows=0,
+        raw_orders=127,
+        fact_orders=127,
+        gold_order_count=127,
+        latest_loaded_at=stale_load,
+        max_lag_rows=5,
+        max_load_age_minutes=120,
+    )
+
+    assert result["status"] == "DEGRADED"
+    assert result["incident_types"] == ["WAREHOUSE_FRESHNESS"]
+
+
+def test_health_allows_load_within_custom_freshness_threshold():
+    recent_load = datetime.now(timezone.utc) - timedelta(minutes=119)
+
+    result = evaluate_health(
+        bronze_rows=127,
+        silver_rows=127,
+        quarantine_rows=0,
+        raw_orders=127,
+        fact_orders=127,
+        gold_order_count=127,
+        latest_loaded_at=recent_load,
+        max_lag_rows=5,
+        max_load_age_minutes=120,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["incident_types"] == []

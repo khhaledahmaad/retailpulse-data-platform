@@ -9,6 +9,9 @@ import psycopg
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
+from warehouse.monitoring.config import (
+    load_monitoring_config,
+)
 from warehouse.monitoring.notifier import (
     send_incident_alert,
     send_recovery_alert,
@@ -21,6 +24,8 @@ load_dotenv(
     override=False,
 )
 
+MONITORING_CONFIG = load_monitoring_config()
+
 BRONZE_ROOT = Path("data_lake/bronze/orders")
 SILVER_ROOT = Path("data_lake/silver/orders")
 QUARANTINE_ROOT = Path("data_lake/quarantine/orders")
@@ -30,9 +35,6 @@ POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "retailpulse")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "retailpulse")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "retailpulse")
-
-MAX_LOAD_AGE_MINUTES = int(os.getenv("MAX_LOAD_AGE_MINUTES", "2880"))
-MAX_LAG_ROWS = int(os.getenv("MAX_LAG_ROWS", "60"))
 
 
 def get_connection():
@@ -201,9 +203,9 @@ def get_committed_files(root: Path):
     return sorted(committed_files)
 
 
-def count_spark_rows(root: Path) -> int:
-    committed_files = get_committed_files(root)
-
+def count_rows_from_files(
+    committed_files: list[Path],
+) -> int:
     total_rows = 0
 
     for path in committed_files:
@@ -215,12 +217,10 @@ def count_spark_rows(root: Path) -> int:
     return total_rows
 
 
-def count_spark_unique_values(
-    root: Path,
+def count_unique_values_from_files(
+    committed_files: list[Path],
     column: str,
 ) -> int:
-    committed_files = get_committed_files(root)
-
     unique_values = set()
 
     for path in committed_files:
@@ -236,17 +236,35 @@ def count_spark_unique_values(
     return len(unique_values)
 
 
+def count_spark_rows(root: Path) -> int:
+    return count_rows_from_files(get_committed_files(root))
+
+
+def count_spark_unique_values(
+    root: Path,
+    column: str,
+) -> int:
+    return count_unique_values_from_files(
+        get_committed_files(root),
+        column,
+    )
+
+
 def collect_lake_metrics():
-    bronze_rows = count_spark_rows(BRONZE_ROOT)
+    bronze_files = get_committed_files(BRONZE_ROOT)
+    silver_files = get_committed_files(SILVER_ROOT)
+    quarantine_files = get_committed_files(QUARANTINE_ROOT)
 
-    silver_rows = count_spark_rows(SILVER_ROOT)
+    bronze_rows = count_rows_from_files(bronze_files)
 
-    silver_unique_events = count_spark_unique_values(
-        SILVER_ROOT,
+    silver_rows = count_rows_from_files(silver_files)
+
+    silver_unique_events = count_unique_values_from_files(
+        silver_files,
         "event_id",
     )
 
-    quarantine_rows = count_spark_rows(QUARANTINE_ROOT)
+    quarantine_rows = count_rows_from_files(quarantine_files)
 
     return {
         "bronze_rows": bronze_rows,
@@ -312,13 +330,24 @@ def evaluate_health(
     fact_orders,
     gold_order_count,
     latest_loaded_at,
-    max_lag_rows=MAX_LAG_ROWS,
+    max_lag_rows=None,
+    max_load_age_minutes=None,
     strict=False,
     silver_unique_events=None,
 ):
     issues = []
     incident_types = []
     degraded = False
+
+    if max_lag_rows is None:
+        max_lag_rows = (
+            MONITORING_CONFIG.max_lag_rows
+        )
+
+    if max_load_age_minutes is None:
+        max_load_age_minutes = (
+            MONITORING_CONFIG.max_load_age_minutes
+        )
 
     if silver_unique_events is None:
         silver_unique_events = silver_rows
@@ -335,10 +364,12 @@ def evaluate_health(
             f"{quarantine_rows} "
             f"(gap={bronze_gap})"
         )
-        incident_types.append("BRONZE_RECONCILIATION")
 
         if strict or abs(bronze_gap) > max_lag_rows:
             degraded = True
+            incident_types.append(
+                "BRONZE_RECONCILIATION"
+            )
 
     silver_raw_gap = silver_unique_events - raw_orders
 
@@ -350,10 +381,16 @@ def evaluate_health(
             f"{raw_orders} "
             f"(gap={silver_raw_gap})"
         )
-        incident_types.append("SILVER_RAW_RECONCILIATION")
 
-        if strict or silver_raw_gap < 0 or silver_raw_gap > max_lag_rows:
+        if (
+            strict
+            or silver_raw_gap < 0
+            or silver_raw_gap > max_lag_rows
+        ):
             degraded = True
+            incident_types.append(
+                "SILVER_RAW_RECONCILIATION"
+            )
 
     if raw_orders != fact_orders:
         issues.append(
@@ -383,7 +420,7 @@ def evaluate_health(
         incident_types.append("WAREHOUSE_FRESHNESS")
         degraded = True
 
-    elif load_age_minutes > MAX_LOAD_AGE_MINUTES:
+    elif load_age_minutes > max_load_age_minutes:
         issues.append(
             "Warehouse data is stale: "
             f"{load_age_minutes} minutes "
@@ -637,8 +674,8 @@ def parse_args():
     parser.add_argument(
         "--max-lag-rows",
         type=int,
-        default=MAX_LAG_ROWS,
-        help=("Maximum tolerated live row lag " f"(default: {MAX_LAG_ROWS})"),
+        default=MONITORING_CONFIG.max_lag_rows,
+        help=("Maximum tolerated live row lag " f"(default: {MONITORING_CONFIG.max_lag_rows})"),
     )
 
     return parser.parse_args()
@@ -667,6 +704,7 @@ def main():
             gold_order_count=db["gold_order_count"],
             latest_loaded_at=db["latest_loaded_at"],
             max_lag_rows=args.max_lag_rows,
+            max_load_age_minutes=MONITORING_CONFIG.max_load_age_minutes,
             strict=args.strict,
         )
 
