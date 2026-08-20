@@ -24,10 +24,6 @@ DBT_ROOT = f"{WAREHOUSE_ROOT}/dbt/retailpulse"
     ),
     catchup=False,
     max_active_runs=1,
-    default_args={
-        "retries": 2,
-        "retry_delay": timedelta(minutes=1),
-    },
     tags=[
         "retailpulse",
         "warehouse",
@@ -38,7 +34,11 @@ DBT_ROOT = f"{WAREHOUSE_ROOT}/dbt/retailpulse"
 
 def retailpulse_warehouse_pipeline():
 
-    @task
+    @task(
+        retries=2,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=2),
+    )
     def start_pipeline_run() -> str:
         context = get_current_context()
         airflow_run_id = context["ti"].run_id
@@ -86,9 +86,16 @@ def retailpulse_warehouse_pipeline():
             "python warehouse/loader/load_orders.py "
             '--airflow-run-id "{{ run_id }}"'
         ),
+        retries=2,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=5),
     )
 
-    @task
+    @task(
+        retries=1,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=2),
+    )
     def validate_raw_orders() -> dict:
         with psycopg.connect(
             host="postgres",
@@ -123,6 +130,9 @@ def retailpulse_warehouse_pipeline():
             "--target airflow "
             "--profiles-dir /opt/retailpulse/warehouse/dbt/retailpulse"
         ),
+        retries=1,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=10),
     )
 
     check_pipeline_health = BashOperator(
@@ -131,9 +141,15 @@ def retailpulse_warehouse_pipeline():
             "cd /opt/retailpulse && "
             "python -m warehouse.monitoring.check_pipeline_health"
         ),
+        retries=0,
+        execution_timeout=timedelta(minutes=5),
     )
 
-    @task
+    @task(
+        retries=1,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=2),
+    )
     def record_pipeline_metrics(
         validation: dict,
     ) -> None:
@@ -141,7 +157,11 @@ def retailpulse_warehouse_pipeline():
         print(f"raw.orders rows: " f"{validation['row_count']}")
         print(f"latest load: " f"{validation['latest_load']}")
 
-    @task
+    @task(
+        retries=1,
+        retry_delay=timedelta(minutes=1),
+        execution_timeout=timedelta(minutes=2),
+    )
     def complete_pipeline_run(
         validation: dict,
     ) -> None:
@@ -180,8 +200,10 @@ def retailpulse_warehouse_pipeline():
         )
 
     @task(
-    trigger_rule="one_failed",
-)
+        trigger_rule="one_failed",
+        retries=0,
+        execution_timeout=timedelta(minutes=2),
+    )
     def record_pipeline_failure() -> None:
         context = get_current_context()
 
