@@ -13,6 +13,16 @@ jobs:
   quality:
     name: Quality checks
     runs-on: ubuntu-latest
+    
+    env:
+      POSTGRES_DB: retailpulse
+      POSTGRES_USER: retailpulse
+      POSTGRES_PASSWORD: retailpulse
+
+      AIRFLOW_DB_NAME: airflow
+      AIRFLOW_DB_USER: airflow
+      AIRFLOW_DB_PASSWORD: airflow
+      AIRFLOW_JWT_SECRET: ci-only-airflow-jwt-secret-not-for-production-0123456789abcdef
 
     steps:
       - name: Checkout repository
