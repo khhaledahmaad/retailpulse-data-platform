@@ -5,7 +5,7 @@ x-airflow-common: &airflow-common
 
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${AIRFLOW_DB_USER:?AIRFLOW_DB_USER is required}:${AIRFLOW_DB_PASSWORD:?AIRFLOW_DB_PASSWORD is required}@airflow-db:5432/${AIRFLOW_DB_NAME:?AIRFLOW_DB_NAME is required}"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/simple_auth_manager_passwords.json.generated
@@ -22,8 +22,8 @@ x-airflow-common: &airflow-common
     # RetailPulse warehouse connection used by the loader/tasks.
     POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
-    POSTGRES_DB: "${POSTGRES_DB}"
-    POSTGRES_USER: "${POSTGRES_USER}"
+    POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+    POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
     POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 
     # Pipeline monitoring SLOs.
@@ -59,9 +59,9 @@ services:
     container_name: retailpulse-postgres
 
     environment:
-      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
-      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
 
     ports:
       - "5432:5432"
@@ -128,6 +128,17 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+    
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 
   kafka-ui:
@@ -142,7 +153,8 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
 
 
   spark-master:
@@ -160,6 +172,19 @@ services:
     volumes:
       - ./spark:/opt/retailpulse/spark
       - ./data_lake:/opt/retailpulse/data_lake
+  
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import socket; s=socket.create_connection(('spark-master',7077),3); s.close()"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 
   spark-worker:
@@ -172,8 +197,8 @@ services:
       - spark://spark-master:7077
 
     depends_on:
-      - spark-master
-
+      spark-master:
+        condition: service_healthy
     volumes:
       - ./spark:/opt/retailpulse/spark
       - ./data_lake:/opt/retailpulse/data_lake
@@ -184,9 +209,9 @@ services:
     container_name: retailpulse-airflow-db
 
     environment:
-      POSTGRES_USER: "${AIRFLOW_DB_USER}"
+      POSTGRES_USER: "${AIRFLOW_DB_USER:?AIRFLOW_DB_USER is required}"
       POSTGRES_PASSWORD: "${AIRFLOW_DB_PASSWORD:?AIRFLOW_DB_PASSWORD is required}"
-      POSTGRES_DB: "${AIRFLOW_DB_NAME}"
+      POSTGRES_DB: "${AIRFLOW_DB_NAME:?AIRFLOW_DB_NAME is required}"
 
     volumes:
       - airflow_db_data:/var/lib/postgresql/data
@@ -223,6 +248,19 @@ services:
 
     restart: unless-stopped
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health', timeout=5)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 
   airflow-scheduler:
     <<: *airflow-common
@@ -235,7 +273,7 @@ services:
       postgres:
         condition: service_healthy
       airflow-api-server:
-        condition: service_started
+        condition: service_healthy
 
     restart: unless-stopped
 
@@ -251,7 +289,7 @@ services:
       postgres:
         condition: service_healthy
       airflow-api-server:
-        condition: service_started
+        condition: service_healthy
 
     restart: unless-stopped
 
