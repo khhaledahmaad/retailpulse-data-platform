@@ -6,6 +6,7 @@ from pathlib import Path
 
 import psycopg
 import pyarrow.parquet as pq
+from dotenv import load_dotenv
 from kafka import KafkaProducer
 from kafka.serializer import (
     DefaultSerializer,
@@ -14,6 +15,13 @@ from kafka.serializer import (
 
 from spark.common.order_contract import validate_event_contract
 from spark.common.order_quality import validate_event_quality
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(
+    dotenv_path=PROJECT_ROOT / ".env",
+    override=False,
+)
 
 TOPIC_NAME = "orders"
 
@@ -46,10 +54,7 @@ POSTGRES_USER = os.getenv(
     "retailpulse",
 )
 
-POSTGRES_PASSWORD = os.getenv(
-    "POSTGRES_PASSWORD",
-    "retailpulse",
-)
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 PROTECTED_FIELDS = {
     "event_id",
@@ -202,6 +207,9 @@ def publish_repaired_event(
 
 
 def get_connection():
+    if not POSTGRES_PASSWORD:
+        raise RuntimeError("POSTGRES_PASSWORD is required")
+    
     return psycopg.connect(
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,

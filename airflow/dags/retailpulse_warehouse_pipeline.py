@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 
 import psycopg
@@ -11,6 +12,16 @@ from pendulum import datetime
 
 WAREHOUSE_ROOT = "/opt/retailpulse/warehouse"
 DBT_ROOT = f"{WAREHOUSE_ROOT}/dbt/retailpulse"
+
+
+def get_warehouse_connection():
+    return psycopg.connect(
+        host=os.environ["POSTGRES_HOST"],
+        port=int(os.environ["POSTGRES_PORT"]),
+        dbname=os.environ["POSTGRES_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+    )
 
 
 @dag(
@@ -43,13 +54,7 @@ def retailpulse_warehouse_pipeline():
         context = get_current_context()
         airflow_run_id = context["ti"].run_id
 
-        with psycopg.connect(
-            host="postgres",
-            port=5432,
-            dbname="retailpulse",
-            user="retailpulse",
-            password="retailpulse",
-        ) as conn:
+        with get_warehouse_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO control.pipeline_runs (
@@ -97,13 +102,7 @@ def retailpulse_warehouse_pipeline():
         execution_timeout=timedelta(minutes=2),
     )
     def validate_raw_orders() -> dict:
-        with psycopg.connect(
-            host="postgres",
-            port=5432,
-            dbname="retailpulse",
-            user="retailpulse",
-            password="retailpulse",
-        ) as conn:
+        with get_warehouse_connection() as conn:
             row = conn.execute("""
                 SELECT
                     COUNT(*) AS row_count,
@@ -168,13 +167,7 @@ def retailpulse_warehouse_pipeline():
         context = get_current_context()
         airflow_run_id = context["ti"].run_id
 
-        with psycopg.connect(
-            host="postgres",
-            port=5432,
-            dbname="retailpulse",
-            user="retailpulse",
-            password="retailpulse",
-        ) as conn:
+        with get_warehouse_connection() as conn:
             conn.execute(
                 """
                 UPDATE control.pipeline_runs
@@ -227,13 +220,7 @@ def retailpulse_warehouse_pipeline():
             + ", ".join(sorted(failed_tasks))
         )
 
-        with psycopg.connect(
-            host="postgres",
-            port=5432,
-            dbname="retailpulse",
-            user="retailpulse",
-            password="retailpulse",
-        ) as conn:
+        with get_warehouse_connection() as conn:
             conn.execute(
                 """
                 UPDATE control.pipeline_runs

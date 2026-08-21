@@ -5,6 +5,14 @@ from pathlib import Path
 
 import psycopg
 import pyarrow.parquet as pq
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(
+    dotenv_path=PROJECT_ROOT / ".env",
+    override=False,
+)
 
 SILVER_ROOT = Path("data_lake/silver/orders")
 
@@ -14,10 +22,7 @@ DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
 DB_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 DB_NAME = os.getenv("POSTGRES_DB", "retailpulse")
 DB_USER = os.getenv("POSTGRES_USER", "retailpulse")
-DB_PASSWORD = os.getenv(
-    "POSTGRES_PASSWORD",
-    "retailpulse",
-)
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 
 INSERT_ORDER_SQL = """
@@ -386,6 +391,9 @@ def main() -> None:
     processed_rows = 0
     inserted_rows = 0
     duplicate_rows = 0
+
+    if not DB_PASSWORD:
+        raise RuntimeError("POSTGRES_PASSWORD is required")
 
     with psycopg.connect(
         host=DB_HOST,

@@ -5,7 +5,7 @@ x-airflow-common: &airflow-common
 
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/simple_auth_manager_passwords.json.generated
@@ -14,7 +14,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
 
     # Shared by Scheduler and API Server for internal JWT signing
-    AIRFLOW__API_AUTH__JWT_SECRET: retailpulse-airflow-jwt-secret-2026-local-development-key-change-me-0123456789abcdef
+    AIRFLOW__API_AUTH__JWT_SECRET: "${AIRFLOW_JWT_SECRET:?AIRFLOW_JWT_SECRET is required}"
 
     # Simple Auth Manager (Airflow 3 default) for local development.
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: airflow:admin
@@ -22,21 +22,21 @@ x-airflow-common: &airflow-common
     # RetailPulse warehouse connection used by the loader/tasks.
     POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
-    POSTGRES_DB: retailpulse
-    POSTGRES_USER: retailpulse
-    POSTGRES_PASSWORD: retailpulse
+    POSTGRES_DB: "${POSTGRES_DB}"
+    POSTGRES_USER: "${POSTGRES_USER}"
+    POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 
     # Pipeline monitoring SLOs.
     MAX_LAG_ROWS: "${MAX_LAG_ROWS:-60}"
     MAX_LOAD_AGE_MINUTES: "${MAX_LOAD_AGE_MINUTES:-2880}"
 
     # Email configuration for alerts
-    MAILTRAP_HOST: ${MAILTRAP_HOST}
-    MAILTRAP_PORT: ${MAILTRAP_PORT}
-    MAILTRAP_USERNAME: ${MAILTRAP_USERNAME}
-    MAILTRAP_PASSWORD: ${MAILTRAP_PASSWORD}
-    ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM}
-    ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+    MAILTRAP_HOST: ${MAILTRAP_HOST:-}
+    MAILTRAP_PORT: ${MAILTRAP_PORT:-}
+    MAILTRAP_USERNAME: ${MAILTRAP_USERNAME:-}
+    MAILTRAP_PASSWORD: ${MAILTRAP_PASSWORD:-}
+    ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+    ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
 
   volumes:
     - ./airflow/dags:/opt/airflow/dags
@@ -59,9 +59,9 @@ services:
     container_name: retailpulse-postgres
 
     environment:
-      POSTGRES_USER: retailpulse
-      POSTGRES_PASSWORD: retailpulse
-      POSTGRES_DB: retailpulse
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_DB: "${POSTGRES_DB}"
 
     ports:
       - "5432:5432"
@@ -73,7 +73,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U retailpulse -d retailpulse"
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
         ]
       interval: 10s
       timeout: 5s
@@ -184,9 +184,9 @@ services:
     container_name: retailpulse-airflow-db
 
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: "${AIRFLOW_DB_USER}"
+      POSTGRES_PASSWORD: "${AIRFLOW_DB_PASSWORD:?AIRFLOW_DB_PASSWORD is required}"
+      POSTGRES_DB: "${AIRFLOW_DB_NAME}"
 
     volumes:
       - airflow_db_data:/var/lib/postgresql/data
@@ -195,7 +195,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U airflow -d airflow"
+          "pg_isready -U ${AIRFLOW_DB_USER} -d ${AIRFLOW_DB_NAME}"
         ]
       interval: 10s
       timeout: 5s

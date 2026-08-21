@@ -34,10 +34,13 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "retailpulse")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "retailpulse")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "retailpulse")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 
 def get_connection():
+    if not POSTGRES_PASSWORD:
+        raise RuntimeError("POSTGRES_PASSWORD is required")
+    
     return psycopg.connect(
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,
