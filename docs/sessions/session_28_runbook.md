@@ -586,7 +586,9 @@ The key outcome of Session 28 was therefore not "add lots of optimisation." It w
 
 ---
 
-## 15. Final quality gate
+---
+
+## 15. Final validation gate
 
 ### Ruff
 
@@ -637,28 +639,78 @@ Business reconciliation remained exact:
 Silver unique = Raw = Fact = Gold = 29,130
 ```
 
-The two physical Silver duplicate deliveries remain valid and correctly tolerated by the architecture.
+The two physical Silver duplicate deliveries remained valid and correctly tolerated by the architecture.
 
 ---
 
-## 16. Session 28 final state
+## 16. Files changed
 
-Session 28 is complete.
-
-Permanent code change:
+Permanent implementation change:
 
 ```text
-analytics.fct_orders
--> dbt-managed UNIQUE B-tree index on event_id
+warehouse/dbt/retailpulse/models/facts/fct_orders.sql
 ```
 
-No unnecessary warehouse complexity was added.
+Documentation:
 
-The platform remains:
+```text
+docs/sessions/session_28_runbook.md
+```
 
-- fully reconciled
-- tested
-- lint-clean
-- dbt-green
-- strict-health HEALTHY
-- ready for Session 29: Disaster Recovery / Full Rebuild
+The only permanent warehouse optimisation retained was the dbt-managed unique index on `analytics.fct_orders(event_id)`.
+
+---
+
+## 17. Session 28 proven properties
+
+Session 28 proved that:
+
+1. `raw.orders(event_id)` already had the required primary-key index.
+2. `fct_orders(event_id)` benefited materially from a unique B-tree index.
+3. dbt can own and recreate that Fact index automatically.
+4. `loaded_at` indexes improved isolated SQL micro-queries but did not materially improve the end-to-end dbt workload at the current scale.
+5. Gold aggregation, control-table dashboard queries, `COPY`, partitioning and Gold incrementalisation were not justified by measured workload.
+6. Optimisation decisions were based on measured query plans and end-to-end timings rather than adding complexity pre-emptively.
+7. Strict business reconciliation remained exact after the optimisation.
+
+---
+
+## 18. Key lessons
+
+1. Optimisation should start with measurement, not assumptions.
+2. A query-plan improvement is not automatically an end-to-end pipeline improvement.
+3. An index that also enforces a business invariant can be more valuable than a purely performance-oriented index.
+4. dbt-owned physical optimisations are preferable to undocumented manual database changes.
+5. Partitioning and incrementalisation should be introduced only when data volume and query patterns justify their operational cost.
+6. Lake-layer and warehouse-layer terminology should remain explicit: `raw.orders` is populated from Spark Silver, not from Bronze.
+
+---
+
+## 19. Git update
+
+```cmd
+git add .
+git commit -m "Complete Session 28 warehouse optimisation"
+git push origin main
+```
+
+---
+
+## 20. Session 28 final status
+
+```text
+Warehouse inventory              PASS
+Query-plan analysis              PASS
+Fact event_id index              PASS
+dbt-owned index recreation       PASS
+Unnecessary indexes rejected     PASS
+Partitioning decision            PASS
+Loader strategy review           PASS
+Dashboard query review           PASS
+Ruff                              PASS
+Pytest                            71/71 PASS
+dbt build                         PASS
+Strict reconciliation            HEALTHY
+```
+
+**Session 28: COMPLETE**

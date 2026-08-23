@@ -648,7 +648,9 @@ For RetailPulse:
 
 ---
 
-## 18. Final quality gate
+---
+
+## 18. Final validation gate
 
 ### dbt-managed Fact index
 
@@ -701,33 +703,62 @@ Completed without error.
 Final state:
 
 ```text
-HEALTHY
+Bronze rows:        29137
+Silver rows:        29132
+Silver unique:      29130
+Silver duplicates:  2
+Quarantine rows:    5
+Raw orders:         29130
+Fact orders:        29130
+Gold order count:   29130
+Status:             HEALTHY
 ```
 
 ---
 
-## 19. Session 29 final status
+## 19. Files changed
+
+Implementation and operational documentation changed during Session 29:
 
 ```text
-Airflow cold-start fix          PASS
-Committed Silver authority      PASS
-Loader hardening                PASS
-Module loader invocation        PASS
-Analytical warehouse destroy    PASS
-Raw replay                      PASS
-dbt analytics rebuild           PASS
-Fact unique index recreation    PASS
-Strict reconciliation           PASS
-Ruff                            PASS
-Pytest                          72/72 PASS
-Compose validation              PASS
+docker-compose.yml
+airflow/dags/retailpulse_warehouse_pipeline.py
+warehouse/loader/load_orders.py
+warehouse/tests/test_load_orders.py
+docs/sessions/END_TO_END_VALIDATION.md
+docs/sessions/session_29_runbook.md
 ```
 
-**Session 29: COMPLETE**
+Key permanent changes:
+
+- Airflow lifecycle behaviour was adjusted during the Session 29 cold-start investigation.
+- the warehouse loader became committed-Silver-aware through Spark `_spark_metadata`
+- loader execution was standardised to `python -m warehouse.loader.load_orders`
+- Airflow and current validation documentation were updated to use module invocation
+- a regression test was added for excluding uncommitted physical Silver files
+
+The Airflow restart-policy choice made during Session 29 was subsequently re-tested and superseded by the final Session 30 production-readiness fix; this runbook retains the Session 29 decision as historical evidence.
 
 ---
 
-## 20. Key lessons
+## 20. Session 29 proven properties
+
+Session 29 proved that:
+
+1. physical Parquet files are not necessarily authoritative Spark output.
+2. Spark `_spark_metadata` must define the committed Silver recovery boundary.
+3. the loader can replay all 1,433 committed Silver files while excluding physical orphan residue.
+4. 29,132 committed Silver deliveries deterministically rebuild 29,130 logical Raw rows.
+5. the two committed duplicate deliveries have exactly-once business effect in the warehouse.
+6. Airflow/dbt can recreate `stg_orders`, `fct_orders` and `mart_daily_sales` after destructive analytical-layer loss.
+7. the Session 28 dbt-managed unique Fact index is recreated automatically.
+8. control/audit history can be preserved while Raw and analytics are rebuilt.
+9. the rebuilt warehouse returns to exact `Silver unique = Raw = Fact = Gold` reconciliation.
+10. blind historical Bronze replay through the current contract is unsafe across schema-version evolution.
+
+---
+
+## 21. Key lessons
 
 1. Physical Parquet presence is not sufficient evidence of committed Spark output.
 2. `_spark_metadata` must be treated as authoritative for streaming sink files.
@@ -737,5 +768,36 @@ Compose validation              PASS
 6. Analytical-layer recovery is deterministic when committed Silver is retained.
 7. Schema evolution makes blind historical Bronze replay unsafe unless replay is version-aware.
 8. dbt-owned indexes survive destructive analytical rebuilds automatically.
-9. DR testing should preserve operational/audit history unless the specific scenario requires destroying it.
-10. A successful DR drill should prove reconciliation invariants, not just that tables exist.
+9. DR testing should preserve operational/audit history unless the scenario specifically requires destroying it.
+10. A successful DR drill should prove reconciliation invariants, not merely that tables exist.
+
+---
+
+## 22. Git update
+
+```cmd
+git add .
+git commit -m "Complete Session 29 disaster recovery hardening"
+git push origin main
+```
+
+---
+
+## 23. Session 29 final status
+
+```text
+Committed Silver authority      PASS
+Loader hardening                PASS
+Module loader invocation        PASS
+Analytical warehouse destroy    PASS
+Raw replay                      PASS
+dbt analytics rebuild           PASS
+Fact unique index recreation    PASS
+Control history preservation    PASS
+Strict reconciliation           PASS
+Ruff                            PASS
+Pytest                          72/72 PASS
+Compose validation              PASS
+```
+
+**Session 29: COMPLETE**
