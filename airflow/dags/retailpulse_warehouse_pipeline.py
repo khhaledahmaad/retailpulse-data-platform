@@ -88,7 +88,7 @@ def retailpulse_warehouse_pipeline():
         task_id="run_incremental_loader",
         bash_command=(
             "cd /opt/retailpulse && "
-            "python warehouse/loader/load_orders.py "
+            "python -m warehouse.loader.load_orders "
             '--airflow-run-id "{{ run_id }}"'
         ),
         retries=2,
@@ -138,7 +138,7 @@ def retailpulse_warehouse_pipeline():
         task_id="check_pipeline_health",
         bash_command=(
             "cd /opt/retailpulse && "
-            "python -m warehouse.monitoring.check_pipeline_health"
+            "python -m warehouse.monitoring.check_pipeline_health "
         ),
         retries=0,
         execution_timeout=timedelta(minutes=5),

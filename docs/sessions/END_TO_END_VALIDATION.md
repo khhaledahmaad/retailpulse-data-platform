@@ -61,7 +61,7 @@ quarantine.count()
 ## 6. Load Silver manually when validating outside Airflow
 
 ```cmd
-python warehouse\loader\load_orders.py
+python -m warehouse.loader.load_orders
 ```
 
 ## 7. Warehouse count

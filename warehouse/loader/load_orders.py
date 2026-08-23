@@ -7,6 +7,8 @@ import psycopg
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
+from warehouse.monitoring.check_pipeline_health import get_committed_files
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(
@@ -133,8 +135,11 @@ def discover_partitions(
 
 def discover_files_in_partition(
     partition_path: Path,
+    committed_files: set[Path],
 ) -> list[Path]:
-    return sorted(partition_path.glob("*.parquet"))
+    return sorted(
+        path for path in partition_path.glob("*.parquet") if path in committed_files
+    )
 
 
 def already_loaded(
@@ -423,6 +428,15 @@ def main() -> None:
                 f"{args.end_partition}"
             )
 
+        committed_files = set(
+            get_committed_files(SILVER_ROOT)
+        )
+
+        print(
+            f"Committed Silver files: "
+            f"{len(committed_files)}"
+        )
+
         partitions = discover_partitions(
             watermark=watermark,
             start_partition=args.start_partition,
@@ -453,7 +467,10 @@ def main() -> None:
             partition_hour,
             partition_path,
         ) in partitions:
-            files = discover_files_in_partition(partition_path)
+            files = discover_files_in_partition(
+                partition_path,
+                committed_files,
+            )
 
             print()
             print(

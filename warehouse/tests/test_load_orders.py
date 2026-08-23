@@ -71,12 +71,38 @@ def test_discover_files_only_returns_parquet_files(
     (partition / "_SUCCESS").touch()
     (partition / "metadata.txt").touch()
 
-    result = load_orders.discover_files_in_partition(partition)
+    result = load_orders.discover_files_in_partition(
+        partition,
+        {
+            partition / "part-00001.parquet",
+            partition / "part-00002.parquet",
+        },
+    )
 
     assert [path.name for path in result] == [
         "part-00001.parquet",
         "part-00002.parquet",
     ]
+
+
+def test_discover_files_excludes_uncommitted_parquet(
+    tmp_path,
+):
+    partition = tmp_path / "ingestion_hour=20"
+    partition.mkdir()
+
+    committed = partition / "part-00001.parquet"
+    uncommitted = partition / "part-00002.parquet"
+
+    committed.touch()
+    uncommitted.touch()
+
+    result = load_orders.discover_files_in_partition(
+        partition,
+        {committed},
+    )
+
+    assert result == [committed]
 
 
 def test_discover_partitions_uses_explicit_historical_range(
