@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker></defs>
+<rect width="100%" height="100%" fill="white"/>
+<text x="40" y="45" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#222">RetailPulse Data Platform — Architecture</text>
+<line x1="175.0" y1="160.0" x2="470.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="470.0" y1="160.0" x2="780.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="160.0" x2="1090.0" y2="110.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="160.0" x2="780.0" y2="312.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="312.5" x2="1090.0" y2="230.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="312.5" x2="1090.0" y2="350.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1090.0" y1="230.0" x2="1400.0" y2="235.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1400.0" y1="235.0" x2="1380.0" y2="377.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1380.0" y1="377.5" x2="1380.0" y2="515.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="542.5" x2="1400.0" y2="235.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="1035.0" y="374.75" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="1090.0" y="390.75" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">orchestrates</text>
+<line x1="780.0" y1="542.5" x2="1380.0" y2="515.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1380.0" y1="515.0" x2="1115.0" y2="655.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1090.0" y1="230.0" x2="1115.0" y2="655.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1115.0" y1="655.0" x2="1385.0" y2="690.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="780.0" y1="742.5" x2="470.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="570.0" y="437.25" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="625.0" y="453.25" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">reprocess</text>
+<line x1="780.0" y1="742.5" x2="1090.0" y2="230.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="880.0" y="472.25" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="935.0" y="488.25" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">repair/parity</text>
+<rect x="60" y="120" width="230" height="80" rx="12" fill="#e8f0fe" stroke="#666" stroke-width="2"/>
+<text x="175.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Source adapter</text>
+<text x="175.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">producer/src/producer.py</text>
+<rect x="360" y="120" width="220" height="80" rx="12" fill="#fff4e5" stroke="#666" stroke-width="2"/>
+<text x="470.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Kafka: orders</text>
+<text x="470.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">docker-compose.yml</text>
+<rect x="650" y="105" width="260" height="110" rx="12" fill="#fdebd0" stroke="#666" stroke-width="2"/>
+<text x="780.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Spark Structured Streaming</text>
+<text x="780.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">stream_orders_to_lake.py</text>
+<rect x="650" y="270" width="260" height="85" rx="12" fill="#f3e5f5" stroke="#666" stroke-width="2"/>
+<text x="780.0" y="302.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Contract + Quality</text>
+<text x="780.0" y="323.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">spark/common/</text>
+<rect x="980" y="70" width="220" height="80" rx="12" fill="#efebe9" stroke="#666" stroke-width="2"/>
+<text x="1090.0" y="100.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Bronze</text>
+<text x="1090.0" y="121.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">raw delivery + lineage</text>
+<rect x="980" y="190" width="220" height="80" rx="12" fill="#e8f5e9" stroke="#666" stroke-width="2"/>
+<text x="1090.0" y="220.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Silver</text>
+<text x="1090.0" y="241.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">validated events</text>
+<rect x="980" y="310" width="220" height="80" rx="12" fill="#ffebee" stroke="#666" stroke-width="2"/>
+<text x="1090.0" y="340.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Quarantine</text>
+<text x="1090.0" y="361.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">rejected + reason</text>
+<rect x="1270" y="190" width="260" height="90" rx="12" fill="#e3f2fd" stroke="#666" stroke-width="2"/>
+<text x="1400.0" y="225.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Incremental loader</text>
+<text x="1400.0" y="246.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">warehouse/loader/load_orders.py</text>
+<rect x="1270" y="340" width="220" height="75" rx="12" fill="#e3f2fd" stroke="#666" stroke-width="2"/>
+<text x="1380.0" y="367.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">raw.orders</text>
+<text x="1380.0" y="388.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">PostgreSQL</text>
+<rect x="1270" y="475" width="220" height="80" rx="12" fill="#fff8e1" stroke="#666" stroke-width="2"/>
+<text x="1380.0" y="505.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">dbt</text>
+<text x="1380.0" y="526.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">stg → fact → mart</text>
+<rect x="650" y="500" width="260" height="85" rx="12" fill="#e0f7fa" stroke="#666" stroke-width="2"/>
+<text x="780.0" y="532.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Airflow</text>
+<text x="780.0" y="553.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">10-minute orchestration</text>
+<rect x="980" y="610" width="270" height="90" rx="12" fill="#f1f8e9" stroke="#666" stroke-width="2"/>
+<text x="1115.0" y="645.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Health + Metrics + Incidents</text>
+<text x="1115.0" y="666.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">warehouse/monitoring/</text>
+<rect x="1270" y="650" width="230" height="80" rx="12" fill="#fce4ec" stroke="#666" stroke-width="2"/>
+<text x="1385.0" y="680.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Operations Dashboard</text>
+<text x="1385.0" y="701.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">127.0.0.1:8084</text>
+<rect x="650" y="700" width="260" height="85" rx="12" fill="#ede7f6" stroke="#666" stroke-width="2"/>
+<text x="780.0" y="732.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Operator Tools</text>
+<text x="780.0" y="753.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">warehouse/tools + spark/tools</text>
+</svg>

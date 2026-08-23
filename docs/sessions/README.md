@@ -1,22 +1,30 @@
-# RetailPulse Reproduction Runbooks — Sessions 1–7
+# RetailPulse Engineering Session Runbooks
 
-These are operational companions to the detailed session wrap-ups.
+This directory preserves the chronological build history from Session 1 onward.
 
-Use them in order. Each one includes:
+The runbooks document implementation decisions, experiments, failures, fixes, commands and validation evidence as the platform evolved.
 
-- what to create/change
-- exact Windows CMD commands
-- run commands
-- on-the-fly validation
-- counts/reconciliation
-- a validation gate before continuing
+For current v1 operating instructions, use the stable documentation instead:
 
-Files:
-- `session_01_runbook.md`
-- `session_02_runbook.md`
-- `session_03_runbook.md`
-- `session_04_runbook.md`
-- `session_05_runbook.md`
-- `session_06_runbook.md`
-- `session_07_runbook.md`
-- `END_TO_END_VALIDATION.md`
+- [`../operations/BUILD_AND_START.md`](../operations/BUILD_AND_START.md)
+- [`../operations/OPERATIONS_RUNBOOK.md`](../operations/OPERATIONS_RUNBOOK.md)
+- [`../operations/DISASTER_RECOVERY.md`](../operations/DISASTER_RECOVERY.md)
+- [`../operations/END_TO_END_VALIDATION.md`](../operations/END_TO_END_VALIDATION.md)
+
+For current architecture/data definitions:
+
+- [`../architecture/ARCHITECTURE.md`](../architecture/ARCHITECTURE.md)
+- [`../data/DATA_CONTRACT.md`](../data/DATA_CONTRACT.md)
+- [`../data/DATA_CATALOGUE.md`](../data/DATA_CATALOGUE.md)
+- [`../data/BUSINESS_GLOSSARY.md`](../data/BUSINESS_GLOSSARY.md)
+
+## Session history
+
+```text
+session_01_runbook.md
+...
+session_29_runbook.md
+session_30_runbook.md   production readiness / project completion checkpoint
+```
+
+Older runbooks are historical and may intentionally show approaches later superseded by the current implementation. Do not treat an old session command as more authoritative than the current source code or stable v1 documentation.

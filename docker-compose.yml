@@ -246,7 +246,7 @@ services:
     ports:
       - "8083:8080"
 
-    restart: on-failure
+    restart: no
 
     healthcheck:
       test:
@@ -275,7 +275,7 @@ services:
       airflow-api-server:
         condition: service_healthy
 
-    restart: on-failure
+    restart: no
 
 
   airflow-dag-processor:
@@ -291,7 +291,7 @@ services:
       airflow-api-server:
         condition: service_healthy
 
-    restart: on-failure
+    restart: no
 
 
 volumes:

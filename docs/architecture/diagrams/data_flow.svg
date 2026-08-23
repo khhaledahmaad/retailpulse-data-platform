@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1550" height="750" viewBox="0 0 1550 750">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker></defs>
+<rect width="100%" height="100%" fill="white"/>
+<text x="40" y="45" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#222">RetailPulse — End-to-End Data Flow</text>
+<line x1="145.0" y1="160.0" x2="385.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="385.0" y1="160.0" x2="620.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="620.0" y1="160.0" x2="875.0" y2="110.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="875.0" y1="110.0" x2="875.0" y2="230.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="820.0" y="156.0" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="875.0" y="172.0" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">contract pass</text>
+<line x1="875.0" y1="110.0" x2="1130.0" y2="285.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="947.5" y="183.5" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="1002.5" y="199.5" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">fail</text>
+<line x1="875.0" y1="230.0" x2="1130.0" y2="140.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="947.5" y="171.0" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="1002.5" y="187.0" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">pass</text>
+<line x1="875.0" y1="230.0" x2="1130.0" y2="285.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="947.5" y="243.5" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="1002.5" y="259.5" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">fail</text>
+<line x1="1130.0" y1="140.0" x2="1385.0" y2="140.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1385.0" y1="140.0" x2="1385.0" y2="280.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1385.0" y1="280.0" x2="1105.0" y2="457.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1105.0" y1="457.5" x2="1360.0" y2="457.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1360.0" y1="457.5" x2="1360.0" y2="597.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1130.0" y1="285.0" x2="875.0" y2="370.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="875.0" y1="370.0" x2="385.0" y2="160.0" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="575.0" y="251.0" width="110" height="22" fill="white" opacity="0.9"/>
+<text x="630.0" y="267.0" text-anchor="middle" font-family="Arial" font-size="12" fill="#555">republish</text>
+<line x1="1130.0" y1="140.0" x2="895.0" y2="602.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1385.0" y1="280.0" x2="895.0" y2="602.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1360.0" y1="457.5" x2="895.0" y2="602.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<line x1="1360.0" y1="597.5" x2="895.0" y2="602.5" stroke="#666" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="50" y="120" width="190" height="80" rx="12" fill="#e8f0fe" stroke="#666" stroke-width="2"/>
+<text x="145.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Order event</text>
+<text x="145.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">schema_version=1</text>
+<rect x="300" y="120" width="170" height="80" rx="12" fill="#fff4e5" stroke="#666" stroke-width="2"/>
+<text x="385.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Kafka</text>
+<text x="385.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">orders</text>
+<rect x="530" y="120" width="180" height="80" rx="12" fill="#efebe9" stroke="#666" stroke-width="2"/>
+<text x="620.0" y="150.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Bronze</text>
+<text x="620.0" y="171.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">raw payload</text>
+<rect x="780" y="70" width="190" height="80" rx="12" fill="#f3e5f5" stroke="#666" stroke-width="2"/>
+<text x="875.0" y="100.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Contract</text>
+<text x="875.0" y="121.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">validation</text>
+<rect x="780" y="190" width="190" height="80" rx="12" fill="#f3e5f5" stroke="#666" stroke-width="2"/>
+<text x="875.0" y="220.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Quality</text>
+<text x="875.0" y="241.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">validation</text>
+<rect x="1040" y="100" width="180" height="80" rx="12" fill="#e8f5e9" stroke="#666" stroke-width="2"/>
+<text x="1130.0" y="130.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Silver</text>
+<text x="1130.0" y="151.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">valid</text>
+<rect x="1040" y="245" width="180" height="80" rx="12" fill="#ffebee" stroke="#666" stroke-width="2"/>
+<text x="1130.0" y="275.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Quarantine</text>
+<text x="1130.0" y="296.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">invalid</text>
+<rect x="1290" y="100" width="190" height="80" rx="12" fill="#e3f2fd" stroke="#666" stroke-width="2"/>
+<text x="1385.0" y="130.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Committed-file</text>
+<text x="1385.0" y="151.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">loader</text>
+<rect x="1290" y="240" width="190" height="80" rx="12" fill="#e3f2fd" stroke="#666" stroke-width="2"/>
+<text x="1385.0" y="270.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">raw.orders</text>
+<text x="1385.0" y="291.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">event_id PK</text>
+<rect x="1010" y="420" width="190" height="75" rx="12" fill="#fff8e1" stroke="#666" stroke-width="2"/>
+<text x="1105.0" y="447.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">stg_orders</text>
+<text x="1105.0" y="468.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">VIEW</text>
+<rect x="1260" y="420" width="200" height="75" rx="12" fill="#fff8e1" stroke="#666" stroke-width="2"/>
+<text x="1360.0" y="447.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">fct_orders</text>
+<text x="1360.0" y="468.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">incremental</text>
+<rect x="1260" y="560" width="200" height="75" rx="12" fill="#fff8e1" stroke="#666" stroke-width="2"/>
+<text x="1360.0" y="587.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">mart_daily_sales</text>
+<text x="1360.0" y="608.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">daily grain</text>
+<rect x="780" y="560" width="230" height="85" rx="12" fill="#f1f8e9" stroke="#666" stroke-width="2"/>
+<text x="895.0" y="592.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Reconcile + Freshness</text>
+<text x="895.0" y="613.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">metrics/incidents</text>
+<rect x="760" y="330" width="230" height="80" rx="12" fill="#ede7f6" stroke="#666" stroke-width="2"/>
+<text x="875.0" y="360.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">Quarantine repair</text>
+<text x="875.0" y="381.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#222">dry-run / publish</text>
+</svg>
