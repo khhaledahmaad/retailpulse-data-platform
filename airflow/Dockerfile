@@ -5,4 +5,5 @@ USER airflow
 RUN pip install --no-cache-dir \
     psycopg[binary] \
     pyarrow \
+    python-dotenv \
     dbt-postgres
