@@ -4,6 +4,10 @@ This directory contains the stable v1 documentation and the chronological engine
 
 ## Stable documentation
 
+### Project overview
+
+- [Implementation Overview](architecture/IMPLEMENTATION_OVERVIEW.md) — the complete 30-session build journey, major outcomes and direct links to the historical runbooks.
+
 ### Architecture
 
 - [Architecture](architecture/ARCHITECTURE.md) — system boundaries, components, reliability model and deployment topology.

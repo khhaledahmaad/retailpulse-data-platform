@@ -22,6 +22,32 @@ The included domain is synthetic e-commerce orders, but the repository is delibe
 - Analytical-layer disaster recovery proven by destructive rebuild and replay.
 - Docker Compose infrastructure, environment-driven configuration and CI quality gates.
 
+## Implementation journey
+
+RetailPulse was built incrementally across **30 engineering sessions**, progressing from a local PostgreSQL foundation to a fully validated v1 streaming platform.
+
+```text
+Sessions 01–05  Foundation & core data path
+                PostgreSQL → Kafka → Spark → lake → incremental loader
+
+Sessions 06–10  Analytics, orchestration & resilience
+                dbt → Airflow → CI → health monitoring → recovery testing
+
+Sessions 11–15  Correctness under real pipeline edge cases
+                SLOs → replay → schema evolution → event time → duplicate delivery
+
+Sessions 16–20  Remediation, lineage & incident operations
+                quarantine repair → audit trail → run lineage → incidents → alerts
+
+Sessions 21–25  Operator experience & runtime hardening
+                dashboard → quality framework → monitoring fixes → retry policy → secrets
+
+Sessions 26–30  Production readiness & v1 completion
+                service readiness → scale testing → optimisation → DR → 1M-event validation
+```
+
+The complete topic/outcome index is in [Implementation Overview](docs/architecture/IMPLEMENTATION_OVERVIEW.md), with each entry linked to its detailed historical runbook under [`docs/sessions/`](docs/sessions/).
+
 ## Validated scale
 
 The v1 production-readiness exercise included a 20-event smoke test followed by a 1,000,000-event burst.
@@ -269,6 +295,7 @@ The `control` schema records loader state and operational history:
 | Area | Document |
 |---|---|
 | Documentation index | [docs/README.md](docs/README.md) |
+| Implementation journey | [docs/architecture/IMPLEMENTATION_OVERVIEW.md](docs/architecture/IMPLEMENTATION_OVERVIEW.md) |
 | Architecture | [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) |
 | Detailed data flow | [docs/architecture/DATA_FLOW.md](docs/architecture/DATA_FLOW.md) |
 | Repository structure | [docs/architecture/REPOSITORY_STRUCTURE.md](docs/architecture/REPOSITORY_STRUCTURE.md) |
